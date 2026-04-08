@@ -1,4 +1,4 @@
-﻿?@extends('layouts.app')
+@extends('layouts.app')
 
 @section('title', 'Mis Pedidos')
 
@@ -25,9 +25,34 @@
     </a>
 </div>
 
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ route('waiter.orders', ['view' => 'pending']) }}"
+               class="btn btn-sm {{ $currentView === 'pending' ? 'btn-primary' : 'btn-outline-primary' }}">
+                <i class="fas fa-hourglass-half me-1"></i>
+                Pendientes y en proceso
+                <span class="badge bg-light text-dark ms-1">{{ $pendingCount }}</span>
+            </a>
+            <a href="{{ route('waiter.orders', ['view' => 'completed']) }}"
+               class="btn btn-sm {{ $currentView === 'completed' ? 'btn-success' : 'btn-outline-success' }}">
+                <i class="fas fa-check-circle me-1"></i>
+                Completados
+                <span class="badge bg-light text-dark ms-1">{{ $completedCount }}</span>
+            </a>
+            <a href="{{ route('waiter.orders', ['view' => 'cancelled']) }}"
+               class="btn btn-sm {{ $currentView === 'cancelled' ? 'btn-danger' : 'btn-outline-danger' }}">
+                <i class="fas fa-ban me-1"></i>
+                Cancelados
+                <span class="badge bg-light text-dark ms-1">{{ $cancelledCount }}</span>
+            </a>
+        </div>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body">
-        <div class="table-responsive">
+        <div class="d-none d-md-block table-responsive">
             <table class="table table-hover">
                 <thead>
                     <tr>
@@ -76,19 +101,19 @@
                                     onclick="viewOrderDetails({{ $order->id }})">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <a href="{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'main']) }}"
+                            <button type="button"
                                class="btn btn-sm btn-outline-primary"
-                               target="_blank"
-                               title="Imprimir pedido principal">
+                               title="Imprimir pedido principal"
+                               onclick="openOrderPrintModal('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'main']) }}')">
                                 <i class="fas fa-print"></i>
-                            </a>
+                            </button>
                             @if($order->can_print_added)
-                                <a href="{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'added']) }}"
+                                <button type="button"
                                    class="btn btn-sm btn-outline-secondary"
-                                   target="_blank"
-                                   title="Imprimir últimos agregados">
+                                   title="Imprimir últimos agregados"
+                                   onclick="openOrderPrintModal('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'added']) }}')">
                                     <i class="fas fa-layer-group"></i>
-                                </a>
+                                </button>
                             @endif
                             @if($order->status === 'pending')
                             <form action="{{ route('waiter.cancel-order', $order->id) }}" 
@@ -106,12 +131,94 @@
                     <tr>
                         <td colspan="8" class="text-center py-4">
                             <i class="fas fa-inbox fa-3x text-muted mb-3 d-block"></i>
-                            <p class="text-muted">No tienes pedidos registrados</p>
+                            <p class="text-muted mb-0">
+                                @if($currentView === 'completed')
+                                    No tienes pedidos completados
+                                @elseif($currentView === 'cancelled')
+                                    No tienes pedidos cancelados
+                                @else
+                                    No tienes pedidos pendientes o en proceso
+                                @endif
+                            </p>
                         </td>
                     </tr>
                     @endforelse
                 </tbody>
             </table>
+        </div>
+
+        <div class="d-md-none">
+            @forelse($orders as $order)
+                <article class="order-mobile-card border rounded-4 p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h6 class="mb-1 fw-bold">Pedido #{{ $order->display_number }}</h6>
+                            <div class="small text-muted">{{ $order->created_at->format('d/m/Y H:i') }}</div>
+                        </div>
+                        <strong class="text-success">Bs. {{ number_format($order->total, 2) }}</strong>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <span class="badge {{ $order->service_mode === 'takeaway' ? 'bg-warning text-dark' : ($order->service_mode === 'mixed' ? 'bg-info text-dark' : 'bg-secondary') }}">
+                            {{ $order->service_mode_label }}
+                        </span>
+                        @if($order->status === 'pending')
+                            <span class="badge bg-warning">Pendiente</span>
+                        @elseif($order->status === 'processing')
+                            <span class="badge bg-info">En Proceso</span>
+                        @elseif($order->status === 'completed')
+                            <span class="badge bg-success">Completado</span>
+                        @else
+                            <span class="badge bg-danger">Cancelado</span>
+                        @endif
+                    </div>
+
+                    <div class="small mt-3">
+                        <div><strong>Mesa:</strong> {{ $order->table_number }}</div>
+                        <div><strong>Procesado por:</strong> {{ $order->cashier?->name ?? '-' }}</div>
+                    </div>
+
+                    <div class="d-grid gap-2 mt-3">
+                        <button class="btn btn-info btn-sm" onclick="viewOrderDetails({{ $order->id }})">
+                            <i class="fas fa-eye me-1"></i>Ver detalle
+                        </button>
+                        <button type="button"
+                           class="btn btn-outline-primary btn-sm"
+                           onclick="openOrderPrintModal('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'main']) }}')">
+                            <i class="fas fa-print me-1"></i>Imprimir principal
+                        </button>
+                        @if($order->can_print_added)
+                            <button type="button"
+                               class="btn btn-outline-secondary btn-sm"
+                               onclick="openOrderPrintModal('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'added']) }}')">
+                                <i class="fas fa-layer-group me-1"></i>Imprimir agregados
+                            </button>
+                        @endif
+                        @if($order->status === 'pending')
+                            <form action="{{ route('waiter.cancel-order', $order->id) }}" method="POST">
+                                @csrf
+                                <button type="submit" class="btn btn-danger btn-sm w-100"
+                                        onclick="return confirm('¿Cancelar este pedido?')">
+                                    <i class="fas fa-times me-1"></i>Cancelar pedido
+                                </button>
+                            </form>
+                        @endif
+                    </div>
+                </article>
+            @empty
+                <div class="text-center py-4">
+                    <i class="fas fa-inbox fa-3x text-muted mb-3 d-block"></i>
+                    <p class="text-muted mb-0">
+                        @if($currentView === 'completed')
+                            No tienes pedidos completados
+                        @elseif($currentView === 'cancelled')
+                            No tienes pedidos cancelados
+                        @else
+                            No tienes pedidos pendientes o en proceso
+                        @endif
+                    </p>
+                </div>
+            @endforelse
         </div>
 
         <div class="mt-3">
@@ -188,6 +295,62 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="orderPrintModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-print me-2"></i>Impresión de pedido
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-success mb-3">
+                    <i class="fas fa-circle-check me-2"></i>Preparando vista de impresión.
+                    <div class="small mt-1" id="orderPrintStatus">Cargando ticket...</div>
+                </div>
+                <div class="ratio ratio-4x3 border rounded overflow-hidden">
+                    <iframe id="orderPrintFrame" title="Ticket de impresión"></iframe>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-outline-primary" id="retryOrderPrintLoad" style="display:none;">
+                    <i class="fas fa-rotate-right me-1"></i>Reintentar cargar
+                </button>
+                <button type="button" class="btn btn-primary" id="printOrderNow" disabled>
+                    <i class="fas fa-print me-1"></i>Imprimir ahora
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection
+
+@section('styles')
+<style>
+    .order-mobile-card {
+        background: #fff;
+    }
+
+    @media (max-width: 767.98px) {
+        #orderDetailsModal .modal-dialog {
+            margin: 0.75rem;
+        }
+
+        #orderDetailsModal .modal-content {
+            border-radius: 1rem;
+        }
+
+        .order-item-card {
+            border: 1px solid #e9ecef;
+            border-radius: 0.9rem;
+            padding: 0.85rem;
+            background: #fff;
+        }
+    }
+</style>
 @endsection
 
 @section('scripts')
@@ -197,9 +360,24 @@ let currentOrder = null;
 let currentItems = [];
 let pendingFoodProduct = null;
 const foodNotesModal = new bootstrap.Modal(document.getElementById('foodNotesModal'));
+const orderPrintModal = new bootstrap.Modal(document.getElementById('orderPrintModal'));
+const orderPrintFrame = document.getElementById('orderPrintFrame');
+let currentOrderPrintUrl = '';
+let orderPrintLoaded = false;
+let orderPrintLoadTimeoutId = null;
+let shouldAutoPrintOrder = false;
+let autoCloseOrderPrintModalTimeoutId = null;
 
 function createCurrentItemKey(productId, notes = '', serviceType = 'dine_in') {
     return `${productId}::${String(notes || '').trim().toLowerCase()}::${serviceType}`;
+}
+
+function getProductStock(product) {
+    return Number(product?.stock ?? 0);
+}
+
+function getSelectableProductsForEdit() {
+    return productsCatalog.filter(product => getProductStock(product) > 0);
 }
 
 function renderOrderDetails() {
@@ -208,11 +386,17 @@ function renderOrderDetails() {
     }
 
     const canEdit = currentOrder.can_edit;
+    const selectableProducts = getSelectableProductsForEdit();
+    const addProductDisabled = selectableProducts.length === 0;
+    const addProductOptions = selectableProducts.length > 0
+        ? selectableProducts.map(p => `<option value="${p.id}">${p.name} (Bs. ${Number(p.price).toFixed(2)})${getProductStock(p) < 10 ? ` - Stock: ${getProductStock(p)}` : ''}</option>`).join('')
+        : '<option value="">No hay productos con stock disponible</option>';
     const selectedTableId = Number(currentOrder.pending_table_id || currentOrder.table_id || 0);
     const tableOptions = (currentOrder.available_tables || []).map(table => `
         <option value="${table.id}" ${selectedTableId === Number(table.id) ? 'selected' : ''}>${table.name}</option>
     `).join('');
     let rows = '';
+    let mobileCards = '';
     let subtotalSum = 0;
 
     currentItems.forEach((item) => {
@@ -249,7 +433,61 @@ function renderOrderDetails() {
                 </tr>
             ` : ''}
         `;
+
+        mobileCards += `
+            <div class="order-item-card mb-2" data-item-key="${item.item_key}">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <strong>${item.product_name}</strong>
+                    <strong>Bs. ${subtotal.toFixed(2)}</strong>
+                </div>
+                <div class="small text-muted mt-1">Unitario: Bs. ${item.unit_price.toFixed(2)}</div>
+                <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+                    <span class="small">Cantidad</span>
+                    ${canEdit
+                        ? `<input type="number" class="form-control form-control-sm qty-input" min="0" value="${item.quantity}" style="max-width: 88px;">`
+                        : `<span class="fw-semibold">${item.quantity}</span>`
+                    }
+                </div>
+                <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+                    <small><strong>Tipo:</strong> ${item.service_type_label || (item.service_type === 'takeaway' ? 'Para llevar' : 'En mesa')}</small>
+                    <span class="badge ${item.service_type === 'takeaway' ? 'bg-warning text-dark' : 'bg-secondary'}">
+                        ${item.service_type === 'takeaway' ? 'Para llevar' : 'En mesa'}
+                    </span>
+                </div>
+                ${item.notes ? `<div class="small mt-2"><strong>Indicaciones:</strong> ${item.notes}</div>` : ''}
+                ${canEdit ? `
+                    <div class="mt-2 text-end">
+                        <button class="btn btn-sm btn-outline-danger remove-item-btn"><i class="fas fa-trash me-1"></i>Quitar</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
     });
+
+    const isMobileView = window.matchMedia('(max-width: 767.98px)').matches;
+    const itemsDesktopMarkup = `
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th>Precio</th>
+                        <th>Cantidad</th>
+                        <th>Subtotal</th>
+                        ${canEdit ? '<th class="text-end">Quitar</th>' : ''}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows || `<tr><td colspan="${canEdit ? 5 : 4}" class="text-center text-muted">Sin productos</td></tr>`}
+                </tbody>
+            </table>
+        </div>
+    `;
+    const itemsMobileMarkup = `
+        <div>
+            ${mobileCards || '<div class="text-center text-muted py-3">Sin productos</div>'}
+        </div>
+    `;
 
     const content = `
         <div class="mb-3 d-flex flex-wrap gap-3">
@@ -271,43 +509,32 @@ function renderOrderDetails() {
                 </select>
             </div>
         ` : ''}
-        <div class="table-responsive">
-            <table class="table table-sm align-middle">
-                <thead>
-                    <tr>
-                        <th>Producto</th>
-                        <th>Precio</th>
-                        <th>Cantidad</th>
-                        <th>Subtotal</th>
-                        ${canEdit ? '<th class="text-end">Quitar</th>' : ''}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows || `<tr><td colspan="${canEdit ? 5 : 4}" class="text-center text-muted">Sin productos</td></tr>`}
-                </tbody>
-            </table>
-        </div>
+        ${isMobileView ? itemsMobileMarkup : itemsDesktopMarkup}
         <div class="d-flex justify-content-end gap-3">\n            <div><strong>Subtotal:</strong> Bs. ${subtotalSum.toFixed(2)}</div>\n            <div><strong>Total:</strong> Bs. ${subtotalSum.toFixed(2)}</div>\n        </div>
         ${canEdit ? `
             <hr>
             <div class="row g-2 align-items-end">
                 <div class="col-md-6">
                     <label class="form-label">Agregar producto</label>
-                    <select class="form-select form-select-sm" id="addProductSelect">
-                        ${productsCatalog.map(p => `<option value="${p.id}">${p.name} (Bs. ${Number(p.price).toFixed(2)})</option>`).join('')}
+                    <select class="form-select form-select-sm" id="addProductSelect" ${addProductDisabled ? 'disabled' : ''}>
+                        ${addProductOptions}
                     </select>
+                    ${addProductDisabled ? '<small class="text-danger d-block mt-1">Todos los productos están agotados.</small>' : ''}
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Cantidad</label>
-                    <input type="number" class="form-control form-control-sm" id="addProductQty" min="1" value="1">
+                    <input type="number" class="form-control form-control-sm" id="addProductQty" min="1" value="1" ${addProductDisabled ? 'disabled' : ''}>
                 </div>
                 <div class="col-md-3">
-                    <button class="btn btn-sm btn-primary w-100" id="addProductBtn">
+                    <button class="btn btn-sm btn-primary w-100" id="addProductBtn" ${addProductDisabled ? 'disabled' : ''}>
                         <i class="fas fa-plus me-1"></i>Agregar
                     </button>
                 </div>
             </div>
-            <div class="mt-3 text-end">
+            <div class="mt-3 d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Cancelar
+                </button>
                 <button class="btn btn-success btn-sm" id="saveOrderChanges">
                     <i class="fas fa-save me-1"></i>Guardar cambios
                 </button>
@@ -323,8 +550,8 @@ function renderOrderDetails() {
         });
 
         $('#orderDetailsContent .remove-item-btn').off('click').on('click', function() {
-            const row = $(this).closest('tr');
-            const itemKey = String(row.data('item-key'));
+            const container = $(this).closest('[data-item-key]');
+            const itemKey = String(container.data('item-key'));
             currentItems = currentItems.filter(i => i.item_key !== itemKey);
             renderOrderDetails();
         });
@@ -337,6 +564,25 @@ function renderOrderDetails() {
             }
 
             const product = productsCatalog.find(p => p.id === productId);
+            if (!product) {
+                alert('Selecciona un producto válido.');
+                return;
+            }
+
+            const stock = getProductStock(product);
+            if (stock <= 0) {
+                alert(`${product.name} está agotado.`);
+                return;
+            }
+
+            if (qty > stock) {
+                alert(`No hay suficiente stock de ${product.name}. Disponible: ${stock}.`);
+                return;
+            }
+
+            if (stock < 10) {
+                alert(`Advertencia: quedan pocas unidades de ${product.name} (stock: ${stock}).`);
+            }
 
             if (isFoodProduct(product)) {
                 pendingFoodProduct = {
@@ -365,10 +611,25 @@ function renderOrderDetails() {
             renderOrderDetails();
         });
 
+        $('#addProductSelect').off('change').on('change', function() {
+            const selectedId = parseInt($(this).val(), 10);
+            const selectedProduct = productsCatalog.find(p => p.id === selectedId);
+            if (!selectedProduct) {
+                return;
+            }
+
+            const stock = getProductStock(selectedProduct);
+            if (stock <= 0) {
+                alert(`${selectedProduct.name} está agotado.`);
+            } else if (stock < 10) {
+                alert(`Advertencia: ${selectedProduct.name} está por acabarse (stock: ${stock}).`);
+            }
+        });
+
         $('#saveOrderChanges').off('click').on('click', function() {
             $('#orderDetailsContent .qty-input').each(function() {
-                const row = $(this).closest('tr');
-                const itemKey = String(row.data('item-key'));
+                const container = $(this).closest('[data-item-key]');
+                const itemKey = String(container.data('item-key'));
                 const qty = parseInt($(this).val(), 10);
                 const item = currentItems.find(i => i.item_key === itemKey);
                 if (item) {
@@ -459,6 +720,48 @@ $('#foodNotesModal').on('hidden.bs.modal', function() {
     resetFoodNotesModal();
 });
 
+$('#printOrderNow').on('click', function() {
+    printOrderTicket();
+});
+
+$('#retryOrderPrintLoad').on('click', function() {
+    retryOrderPrintLoad();
+});
+
+if (orderPrintFrame) {
+    orderPrintFrame.addEventListener('load', function() {
+        orderPrintLoaded = true;
+        clearOrderPrintLoadTimeout();
+        $('#orderPrintStatus').text('Vista lista. Puedes imprimir.');
+        $('#printOrderNow').prop('disabled', false);
+        $('#retryOrderPrintLoad').hide();
+
+        if (shouldAutoPrintOrder) {
+            setTimeout(function() {
+                printOrderTicket(true);
+            }, 200);
+        }
+    });
+
+    orderPrintFrame.addEventListener('error', function() {
+        handleOrderPrintLoadError();
+    });
+}
+
+$('#orderPrintModal').on('hidden.bs.modal', function() {
+    clearOrderPrintLoadTimeout();
+    clearAutoCloseOrderPrintModalTimeout();
+    orderPrintLoaded = false;
+    currentOrderPrintUrl = '';
+    shouldAutoPrintOrder = false;
+    $('#retryOrderPrintLoad').hide();
+    $('#printOrderNow').prop('disabled', true);
+    $('#orderPrintStatus').text('Cargando ticket...');
+    if (orderPrintFrame) {
+        orderPrintFrame.src = 'about:blank';
+    }
+});
+
 $('.food-note-input').on('change', function() {
     const isComplete = this.value === 'COMPLETO';
 
@@ -526,6 +829,98 @@ function viewOrderDetails(orderId) {
             </div>
         `);
     });
+}
+
+function openOrderPrintModal(printUrl) {
+    currentOrderPrintUrl = printUrl;
+    orderPrintLoaded = false;
+    shouldAutoPrintOrder = true;
+    $('#printOrderNow').prop('disabled', true);
+    $('#retryOrderPrintLoad').hide();
+    $('#orderPrintStatus').text('Cargando ticket...');
+    startOrderPrintLoadTimeout();
+    if (orderPrintFrame) {
+        orderPrintFrame.src = printUrl;
+    }
+    orderPrintModal.show();
+}
+
+function printOrderTicket(isAuto = false) {
+    if (!orderPrintFrame || !orderPrintFrame.contentWindow || !orderPrintLoaded) {
+        if (!isAuto) {
+            alert('La vista de impresión aún no está lista.');
+        }
+        return;
+    }
+
+    try {
+        orderPrintFrame.contentWindow.focus();
+        orderPrintFrame.contentWindow.print();
+        shouldAutoPrintOrder = false;
+        if (isAuto) {
+            scheduleOrderPrintModalAutoClose();
+        }
+    } catch (error) {
+        if (isAuto) {
+            alert('No se pudo imprimir automáticamente. Usa "Imprimir ahora".');
+        } else {
+            alert('No se pudo abrir la impresión. Usa "Reintentar cargar".');
+        }
+    }
+}
+
+function retryOrderPrintLoad() {
+    if (!currentOrderPrintUrl || !orderPrintFrame) {
+        return;
+    }
+
+    orderPrintLoaded = false;
+    shouldAutoPrintOrder = true;
+    $('#printOrderNow').prop('disabled', true);
+    $('#retryOrderPrintLoad').hide();
+    $('#orderPrintStatus').text('Reintentando carga de ticket...');
+    startOrderPrintLoadTimeout();
+    orderPrintFrame.src = currentOrderPrintUrl;
+}
+
+function startOrderPrintLoadTimeout() {
+    clearOrderPrintLoadTimeout();
+    orderPrintLoadTimeoutId = setTimeout(function() {
+        if (!orderPrintLoaded) {
+            handleOrderPrintLoadError();
+        }
+    }, 8000);
+}
+
+function clearOrderPrintLoadTimeout() {
+    if (orderPrintLoadTimeoutId) {
+        clearTimeout(orderPrintLoadTimeoutId);
+        orderPrintLoadTimeoutId = null;
+    }
+}
+
+function handleOrderPrintLoadError() {
+    clearOrderPrintLoadTimeout();
+    $('#orderPrintStatus').text('No se pudo cargar la vista de impresión. Reintenta la carga.');
+    $('#retryOrderPrintLoad').show();
+    $('#printOrderNow').prop('disabled', true);
+}
+
+function scheduleOrderPrintModalAutoClose() {
+    clearAutoCloseOrderPrintModalTimeout();
+    autoCloseOrderPrintModalTimeoutId = setTimeout(function() {
+        const modalEl = document.getElementById('orderPrintModal');
+        if (modalEl && modalEl.classList.contains('show')) {
+            orderPrintModal.hide();
+        }
+    }, 2500);
+}
+
+function clearAutoCloseOrderPrintModalTimeout() {
+    if (autoCloseOrderPrintModalTimeoutId) {
+        clearTimeout(autoCloseOrderPrintModalTimeoutId);
+        autoCloseOrderPrintModalTimeoutId = null;
+    }
 }
 </script>
 @endsection

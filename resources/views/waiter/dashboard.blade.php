@@ -1,4 +1,4 @@
-﻿?@extends('layouts.app')
+@extends('layouts.app')
 
 @section('title', 'Panel Mesero')
 
@@ -35,6 +35,17 @@
     .product-card.selected {
         border-color: #27ae60;
         background-color: #e8f8f0;
+    }
+
+    .product-card.is-out-of-stock {
+        opacity: 0.62;
+        border-color: #ef4444;
+        background: #f8fafc;
+    }
+
+    .product-card.is-out-of-stock .product-name,
+    .product-card.is-out-of-stock .product-price {
+        color: #9ca3af;
     }
 
     .product-image {
@@ -198,10 +209,83 @@
     .product-search-box {
         max-width: 420px;
     }
+
+    .stock-warning-banner {
+        border: 1px solid #fbbf24;
+        background: #fffbeb;
+        color: #92400e;
+        border-radius: 14px;
+        padding: 12px 14px;
+    }
+
+    .stock-chip-low {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 8px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #fff7ed;
+        color: #9a3412;
+        border: 1px solid #fdba74;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .category-filters-scroll {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .category-filters-scroll .btn {
+        white-space: nowrap;
+    }
+
+    .mobile-cart-spacer {
+        display: none;
+    }
+
+    .mobile-cart-sticky {
+        display: none;
+    }
+
+    @media (max-width: 991.98px) {
+        .mobile-cart-spacer {
+            display: block;
+            height: 88px;
+        }
+
+        .mobile-cart-sticky {
+            display: block;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1040;
+            background: #ffffff;
+            border-top: 1px solid #e5e7eb;
+            box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.12);
+            padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        }
+    }
 </style>
 @endsection
 
 @section('content')
+@php
+    $trackedStockProducts = $categories
+        ->flatMap(fn ($category) => $category->activeProducts);
+
+    $lowStockProducts = $trackedStockProducts
+        ->filter(fn ($product) => (int) $product->stock < 10)
+        ->sortBy('name')
+        ->values();
+@endphp
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-shopping-cart me-2"></i>Nuevo Pedido</h2>
     <div>
@@ -210,6 +294,17 @@
         </span>
     </div>
 </div>
+
+@if($lowStockProducts->isNotEmpty())
+<div class="stock-warning-banner mb-4">
+    <div class="fw-semibold mb-1"><i class="fas fa-triangle-exclamation me-2"></i>Advertencia: productos con stock crítico</div>
+    <div class="small">
+        @foreach($lowStockProducts as $product)
+            <span class="me-3 d-inline-block">{{ $product->name }}: {{ $product->stock }} unid.</span>
+        @endforeach
+    </div>
+</div>
+@endif
 
 <div class="row">
     <!-- Productos -->
@@ -230,6 +325,9 @@
                             placeholder="Escribe nombre o descripción..."
                             autocomplete="off"
                         >
+                        <button class="btn btn-outline-secondary" type="button" id="clearProductSearch" title="Limpiar búsqueda">
+                            <i class="fas fa-xmark"></i>
+                        </button>
                     </div>
                 </div>
 
@@ -237,7 +335,7 @@
                 <ul class="nav nav-pills mb-4" id="categoryTabs" role="tablist">
                     @foreach($categories as $index => $category)
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link {{ $index === 0 ? 'active' : '' }}" 
+                        <button class="nav-link category-tab-btn {{ $index === 0 ? 'active' : '' }}" 
                                 id="cat-{{ $category->id }}-tab" 
                                 data-bs-toggle="pill" 
                                 data-bs-target="#cat-{{ $category->id }}" 
@@ -257,12 +355,15 @@
                         <div class="row g-3">
                             @forelse($category->activeProducts as $product)
                             <div class="col-md-4 col-lg-3">
-                                <div class="card product-card" 
+                                <div class="card product-card {{ (int) $product->stock <= 0 ? 'is-out-of-stock' : '' }}" 
                                      data-product-id="{{ $product->id }}"
                                      data-product-name="{{ $product->name }}"
                                      data-product-description="{{ $product->description ?? '' }}"
                                      data-product-price="{{ $product->price }}"
                                      data-category-code="{{ $product->category->code ?? '' }}"
+                                     data-stock="{{ (int) $product->stock }}"
+                                     data-low-stock="{{ (int) $product->stock < 10 ? '1' : '0' }}"
+                                     data-out-of-stock="{{ (int) $product->stock <= 0 ? '1' : '0' }}"
                                      data-is-ceviche="{{ str_contains(Str::lower($product->category->code ?? ''), 'cevich') ? '1' : '0' }}">
                                     <img src="{{ $product->image_url }}" 
                                          class="product-image" 
@@ -271,6 +372,12 @@
                                     <div class="product-info text-center">
                                         <div class="product-name">{{ $product->name }}</div>
                                         <div class="product-price">Bs. {{ number_format($product->price, 2) }}</div>
+                                        @if((int) $product->stock < 10)
+                                            <div class="stock-chip-low">
+                                                <i class="fas fa-triangle-exclamation"></i>
+                                                {{ (int) $product->stock <= 0 ? 'Agotado' : 'Stock bajo: ' . (int) $product->stock }}
+                                            </div>
+                                        @endif
                                         @if($product->description)
                                         <small class="text-muted d-block mt-2">{{ Str::limit($product->description, 50) }}</small>
                                         @endif
@@ -345,6 +452,28 @@
                 </button>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="mobile-cart-spacer"></div>
+<div class="mobile-cart-sticky">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div>
+            <div class="small text-muted">Resumen rápido</div>
+            <div class="fw-bold"><span id="mobileItemsCount">0</span> item(s)</div>
+        </div>
+        <div class="text-end">
+            <div class="small text-muted">Total</div>
+            <div class="fw-bold text-danger" id="mobileTotalAmount">Bs. 0.00</div>
+        </div>
+    </div>
+    <div class="d-grid gap-2">
+        <button type="button" id="mobileGoToSummary" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-receipt me-1"></i>Ver resumen
+        </button>
+        <button type="button" id="mobileSendOrder" class="btn btn-success btn-sm" {{ $availableTables->isEmpty() ? 'disabled' : '' }}>
+            <i class="fas fa-paper-plane me-1"></i>Enviar pedido
+        </button>
     </div>
 </div>
 
@@ -482,15 +611,59 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="kitchenPrintModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-print me-2"></i>Impresión de cocina
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-success mb-3">
+                    <i class="fas fa-circle-check me-2"></i>Pedido creado correctamente.
+                    <div class="small mt-1" id="kitchenPrintStatus">Cargando vista para imprimir...</div>
+                </div>
+                <div class="ratio ratio-4x3 border rounded overflow-hidden">
+                    <iframe id="kitchenPrintFrame" title="Comanda de cocina"></iframe>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    Cerrar
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="retryKitchenLoad" style="display: none;">
+                    <i class="fas fa-rotate-right me-1"></i>Reintentar cargar
+                </button>
+                <button type="button" class="btn btn-success" id="printKitchenNow" disabled>
+                    <i class="fas fa-print me-1"></i>Imprimir cocina
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed top-0 end-0 p-3" id="appToastContainer" style="z-index: 1100;"></div>
 @endsection
 
 @section('scripts')
 <script>
 let orderItems = [];
 let pendingFoodProduct = null;
+let isSubmittingOrder = false;
+let shouldReloadAfterKitchenModalClose = false;
+let currentKitchenPrintUrl = '';
+let kitchenFrameLoaded = false;
+let kitchenLoadTimeoutId = null;
+let shouldAutoPrintKitchen = false;
+let autoCloseKitchenModalTimeoutId = null;
 const cevicheOptionsModal = new bootstrap.Modal(document.getElementById('cevicheOptionsModal'));
 const tablePickerModal = new bootstrap.Modal(document.getElementById('tablePickerModal'));
 const confirmOrderModal = new bootstrap.Modal(document.getElementById('confirmOrderModal'));
+const kitchenPrintModal = new bootstrap.Modal(document.getElementById('kitchenPrintModal'));
+const kitchenPrintFrame = document.getElementById('kitchenPrintFrame');
 
 function createOrderItemKey(productId, notes = '', serviceType = 'dine_in') {
     return `${productId}::${String(notes || '').trim().toLowerCase()}::${serviceType}`;
@@ -504,6 +677,20 @@ $(document).ready(function() {
         const productPrice = parseFloat($(this).data('product-price'));
         const categoryCode = String($(this).data('category-code') || '');
         const isCeviche = String($(this).data('is-ceviche') || '0') === '1';
+        const isLowStock = String($(this).data('low-stock') || '0') === '1';
+        const isOutOfStock = String($(this).data('out-of-stock') || '0') === '1';
+        const currentStock = parseInt($(this).data('stock') || 0, 10);
+        const orderedQty = getCurrentOrderedQtyByProduct(productId);
+        const availableQty = Math.max(0, (Number.isNaN(currentStock) ? 0 : currentStock) - orderedQty);
+
+        if (isOutOfStock || availableQty <= 0) {
+            showToast('danger', `${productName} está agotado. Ya no hay stock disponible.`);
+            return;
+        }
+
+        if (isLowStock) {
+            showToast('warning', `Quedan pocos platos de ${productName}. Stock disponible: ${availableQty} unidad(es).`);
+        }
 
         handleProductSelection(productId, productName, productPrice, categoryCode, isCeviche);
     });
@@ -543,24 +730,60 @@ $(document).ready(function() {
 
     // Enviar pedido
     $('#sendOrder').click(function() {
-        const tableId = $('#tableSelect').val();
-
-        if (!tableId) {
-            alert('Por favor selecciona una mesa');
-            return;
-        }
-
-        if (orderItems.length === 0) {
-            alert('Agrega productos al pedido');
-            return;
-        }
-
-        renderConfirmOrderSummary();
-        confirmOrderModal.show();
+        openConfirmOrderModal();
     });
 
     $('#confirmOrderPrint').click(function() {
+        if (isSubmittingOrder) {
+            return;
+        }
         submitOrderAndPrint();
+    });
+
+    $('#printKitchenNow').on('click', function() {
+        printKitchenTicket();
+    });
+
+    $('#retryKitchenLoad').on('click', function() {
+        retryKitchenPrintLoad();
+    });
+
+    if (kitchenPrintFrame) {
+        kitchenPrintFrame.addEventListener('load', function() {
+            kitchenFrameLoaded = true;
+            clearKitchenLoadTimeout();
+            $('#kitchenPrintStatus').text('Vista lista. Puedes imprimir la comanda.');
+            $('#printKitchenNow').prop('disabled', false);
+            $('#retryKitchenLoad').hide();
+
+            if (shouldAutoPrintKitchen) {
+                setTimeout(function() {
+                    printKitchenTicket(true);
+                }, 200);
+            }
+        });
+
+        kitchenPrintFrame.addEventListener('error', function() {
+            handleKitchenFrameLoadError();
+        });
+    }
+
+    $('#kitchenPrintModal').on('hidden.bs.modal', function() {
+        clearKitchenLoadTimeout();
+        clearAutoCloseKitchenModalTimeout();
+        kitchenFrameLoaded = false;
+        currentKitchenPrintUrl = '';
+        shouldAutoPrintKitchen = false;
+        $('#retryKitchenLoad').hide();
+
+        if (kitchenPrintFrame) {
+            kitchenPrintFrame.src = 'about:blank';
+        }
+
+        if (shouldReloadAfterKitchenModalClose) {
+            shouldReloadAfterKitchenModalClose = false;
+            location.reload();
+        }
     });
 
     // Limpiar pedido
@@ -573,6 +796,35 @@ $(document).ready(function() {
     $('#productSearchInput').on('input', function() {
         filterProducts($(this).val());
     });
+
+    $('#clearProductSearch').on('click', function() {
+        $('#productSearchInput').val('');
+        filterProducts('');
+        $('#productSearchInput').trigger('focus');
+    });
+
+    $('#quickCategoryFilters').on('click', '.quick-category-btn', function() {
+        const categoryTarget = String($(this).data('category-target') || '');
+        activateQuickCategory(categoryTarget);
+    });
+
+    $('#mobileGoToSummary').on('click', function() {
+        const summaryCard = document.querySelector('.order-summary');
+        if (summaryCard) {
+            summaryCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    });
+
+    $('#mobileSendOrder').on('click', function() {
+        openConfirmOrderModal();
+    });
+
+    $('#categoryTabs button[data-bs-toggle="pill"]').on('shown.bs.tab', function() {
+        const tabTarget = String($(this).data('bs-target') || '').replace('#', '');
+        syncQuickCategorySelection(tabTarget);
+    });
+
+    updateStickyCartSummary();
 });
 
 function filterProducts(searchTerm) {
@@ -580,6 +832,9 @@ function filterProducts(searchTerm) {
     const searchWords = normalizedTerm === ''
         ? []
         : normalizedTerm.split(/\s+/).filter(Boolean);
+
+    let firstTabWithResults = null;
+    let totalMatches = 0;
 
     $('.tab-pane').each(function() {
         let visibleCards = 0;
@@ -595,8 +850,13 @@ function filterProducts(searchTerm) {
             $(this).toggle(matches);
             if (matches) {
                 visibleCards += 1;
+                totalMatches += 1;
             }
         });
+
+        if (!firstTabWithResults && visibleCards > 0) {
+            firstTabWithResults = $(this).attr('id');
+        }
 
         const emptyState = $(this).find('.product-search-empty');
         if (normalizedTerm !== '' && visibleCards === 0) {
@@ -614,6 +874,52 @@ function filterProducts(searchTerm) {
             emptyState.remove();
         }
     });
+
+    if (normalizedTerm !== '' && firstTabWithResults) {
+        activateCategoryTab(firstTabWithResults);
+    } else if (normalizedTerm === '') {
+        $('.tab-pane .product-search-empty').remove();
+    }
+
+    return totalMatches;
+}
+
+function activateCategoryTab(targetId) {
+    const tabButton = document.querySelector(`#${targetId}-tab`);
+    if (tabButton) {
+        bootstrap.Tab.getOrCreateInstance(tabButton).show();
+    }
+}
+
+function activateQuickCategory(categoryTarget) {
+    if (!categoryTarget) {
+        return;
+    }
+
+    $('.quick-category-btn').removeClass('active');
+    $(`.quick-category-btn[data-category-target="${categoryTarget}"]`).addClass('active');
+
+    if (categoryTarget === 'all') {
+        const firstTabId = $('#categoryTabs button[data-bs-toggle="pill"]').first().data('bs-target');
+        if (firstTabId) {
+            activateCategoryTab(String(firstTabId).replace('#', ''));
+        }
+        return;
+    }
+
+    activateCategoryTab(categoryTarget);
+}
+
+function syncQuickCategorySelection(tabTarget) {
+    if (!tabTarget) {
+        return;
+    }
+
+    $('.quick-category-btn').removeClass('active');
+    const exactButton = $(`.quick-category-btn[data-category-target="${tabTarget}"]`);
+    if (exactButton.length) {
+        exactButton.addClass('active');
+    }
 }
 
 function handleProductSelection(productId, productName, productPrice, categoryCode = '', isCeviche = false) {
@@ -663,6 +969,14 @@ function syncCevicheOptionStyles() {
 }
 
 function addToOrder(productId, productName, productPrice, notes = '', serviceType = 'dine_in') {
+    const stockLimit = getStockLimitForProduct(productId);
+    const currentQtyByProduct = getCurrentOrderedQtyByProduct(productId);
+
+    if (Number.isInteger(stockLimit) && currentQtyByProduct >= stockLimit) {
+        showToast('danger', `${productName} ya no tiene stock disponible para este pedido.`);
+        return;
+    }
+
     const itemKey = createOrderItemKey(productId, notes, serviceType);
     const existingItem = orderItems.find(item => item.item_key === itemKey);
 
@@ -684,6 +998,22 @@ function addToOrder(productId, productName, productPrice, notes = '', serviceTyp
     updateTotals();
 }
 
+function getCurrentOrderedQtyByProduct(productId) {
+    return orderItems
+        .filter(item => Number(item.product_id) === Number(productId))
+        .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+}
+
+function getStockLimitForProduct(productId) {
+    const card = $(`.product-card[data-product-id="${productId}"]`).first();
+    if (!card.length) {
+        return null;
+    }
+
+    const stock = parseInt(card.data('stock'), 10);
+    return Number.isNaN(stock) ? null : stock;
+}
+
 function removeFromOrder(itemKey) {
     orderItems = orderItems.filter(item => item.item_key !== itemKey);
     renderOrderItems();
@@ -693,13 +1023,35 @@ function removeFromOrder(itemKey) {
 function updateQuantity(itemKey, quantity) {
     const item = orderItems.find(item => item.item_key === itemKey);
     if (item) {
-        item.quantity = parseInt(quantity);
-        if (item.quantity <= 0) {
+        const requestedQty = parseInt(quantity, 10);
+        if (Number.isNaN(requestedQty) || requestedQty <= 0) {
             removeFromOrder(itemKey);
-        } else {
-            renderOrderItems();
-            updateTotals();
+            return;
         }
+
+        const stockLimit = getStockLimitForProduct(item.product_id);
+        if (Number.isInteger(stockLimit)) {
+            const qtyFromOtherRows = getCurrentOrderedQtyByProduct(item.product_id) - Number(item.quantity || 0);
+            const maxForThisRow = Math.max(0, stockLimit - qtyFromOtherRows);
+
+            if (requestedQty > maxForThisRow) {
+                if (maxForThisRow <= 0) {
+                    showToast('danger', `${item.name} está agotado para este pedido.`);
+                    removeFromOrder(itemKey);
+                    return;
+                }
+
+                item.quantity = maxForThisRow;
+                showToast('warning', `${item.name}: solo puedes llegar hasta ${maxForThisRow} unidad(es) en este pedido.`);
+                renderOrderItems();
+                updateTotals();
+                return;
+            }
+        }
+
+        item.quantity = requestedQty;
+        renderOrderItems();
+        updateTotals();
     }
 }
 
@@ -714,13 +1066,19 @@ function renderOrderItems() {
             </div>
         `);
         $('#sendOrder').prop('disabled', true);
+        $('#mobileSendOrder').prop('disabled', true);
+        updateStickyCartSummary();
         return;
     }
 
     $('#sendOrder').prop('disabled', false);
+    $('#mobileSendOrder').prop('disabled', false);
     let html = '';
 
     orderItems.forEach(item => {
+        const stockLimit = getStockLimitForProduct(item.product_id);
+        const maxReached = Number.isInteger(stockLimit) && item.quantity >= stockLimit;
+        const qtyMaxAttr = Number.isInteger(stockLimit) ? `max="${stockLimit}"` : '';
         html += `
             <div class="order-item">
                 <div class="d-flex justify-content-between align-items-start mb-2">
@@ -735,9 +1093,9 @@ function renderOrderItems() {
                         <i class="fas fa-minus"></i>
                     </button>
                     <input type="number" class="form-control form-control-sm" 
-                           value="${item.quantity}" min="1"
+                           value="${item.quantity}" min="1" ${qtyMaxAttr}
                            onchange="updateQuantity('${item.item_key}', this.value)">
-                    <button class="btn btn-sm btn-outline-secondary" 
+                    <button class="btn btn-sm btn-outline-secondary" ${maxReached ? 'disabled' : ''} ${maxReached ? 'title="Stock límite alcanzado"' : ''}
                             onclick="updateQuantity('${item.item_key}', ${item.quantity + 1})">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -757,6 +1115,7 @@ function renderOrderItems() {
     });
 
     container.html(html);
+    updateStickyCartSummary();
 }
 
 function updateTotals() {
@@ -765,6 +1124,33 @@ function updateTotals() {
 
     $('#subtotal').text('Bs. ' + subtotal.toFixed(2));
     $('#total').text('Bs. ' + total.toFixed(2));
+    $('#mobileTotalAmount').text('Bs. ' + total.toFixed(2));
+}
+
+function updateStickyCartSummary() {
+    const itemsCount = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+    $('#mobileItemsCount').text(itemsCount);
+    $('#mobileSendOrder').prop('disabled', itemsCount === 0 || {{ $availableTables->isEmpty() ? 'true' : 'false' }});
+}
+
+function openConfirmOrderModal() {
+    if (isSubmittingOrder) {
+        return;
+    }
+
+    const tableId = $('#tableSelect').val();
+    if (!tableId) {
+        showToast('warning', 'Por favor selecciona una mesa.');
+        return;
+    }
+
+    if (orderItems.length === 0) {
+        showToast('warning', 'Agrega productos al pedido.');
+        return;
+    }
+
+    renderConfirmOrderSummary();
+    confirmOrderModal.show();
 }
 
 function renderConfirmOrderSummary() {
@@ -796,10 +1182,14 @@ function renderConfirmOrderSummary() {
 }
 
 function submitOrderAndPrint() {
-    const tableId = $('#tableSelect').val();
-    const printWindow = window.open('', '_blank');
+    if (isSubmittingOrder) {
+        return;
+    }
 
-    $('#confirmOrderPrint').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Enviando...');
+    const tableId = $('#tableSelect').val();
+    isSubmittingOrder = true;
+
+    setSubmittingState(true);
 
     $.ajax({
         url: '{{ route("waiter.create-order") }}',
@@ -812,26 +1202,60 @@ function submitOrderAndPrint() {
             const printUrl = '{{ route("waiter.print-order", ["id" => "__ORDER_ID__", "scope" => "main"]) }}'
                 .replace('__ORDER_ID__', response.order_id);
 
-            if (printWindow) {
-                printWindow.location = printUrl;
-            } else {
-                window.open(printUrl, '_blank');
+            shouldReloadAfterKitchenModalClose = true;
+            $('#printKitchenNow').prop('disabled', true);
+            $('#retryKitchenLoad').hide();
+            $('#kitchenPrintStatus').text('Cargando vista para imprimir...');
+            kitchenFrameLoaded = false;
+            currentKitchenPrintUrl = printUrl;
+            shouldAutoPrintKitchen = true;
+            startKitchenLoadTimeout();
+            if (kitchenPrintFrame) {
+                kitchenPrintFrame.src = printUrl;
             }
 
             confirmOrderModal.hide();
             clearOrder();
-            location.reload();
+            kitchenPrintModal.show();
+            showToast('success', 'Pedido creado. Prepara la impresión de cocina.');
         },
         error: function(xhr) {
-            if (printWindow) {
-                printWindow.close();
-            }
-            alert('Error al crear el pedido: ' + (xhr.responseJSON?.message || 'Error desconocido'));
+            showToast('danger', 'Error al crear el pedido: ' + (xhr.responseJSON?.message || 'Error desconocido'));
         },
         complete: function() {
-            $('#confirmOrderPrint').prop('disabled', false).html('<i class="fas fa-print me-1"></i>Imprimir');
+            isSubmittingOrder = false;
+            setSubmittingState(false);
+            if (orderItems.length > 0) {
+                $('#sendOrder').prop('disabled', false);
+                $('#mobileSendOrder').prop('disabled', false);
+            }
         }
     });
+}
+
+function printKitchenTicket(isAuto = false) {
+    if (!kitchenPrintFrame || !kitchenPrintFrame.contentWindow || !kitchenFrameLoaded) {
+        if (!isAuto) {
+            showToast('warning', 'La comanda aún no está lista. Intenta nuevamente.');
+        }
+        return;
+    }
+
+    try {
+        kitchenPrintFrame.contentWindow.focus();
+        kitchenPrintFrame.contentWindow.print();
+        shouldAutoPrintKitchen = false;
+        if (isAuto) {
+            showToast('info', 'Se abrió la impresión automática de cocina.');
+            scheduleKitchenModalAutoClose();
+        }
+    } catch (error) {
+        if (isAuto) {
+            showToast('warning', 'No se pudo imprimir automáticamente. Usa "Imprimir cocina".');
+        } else {
+            showToast('danger', 'No se pudo abrir la impresión. Usa "Reintentar cargar".');
+        }
+    }
 }
 
 function clearOrder() {
@@ -841,6 +1265,106 @@ function clearOrder() {
     $('#selectedTableLabel').text('Ninguna mesa seleccionada');
     renderOrderItems();
     updateTotals();
+    updateStickyCartSummary();
+}
+
+function setSubmittingState(isLoading) {
+    if (isLoading) {
+        $('#confirmOrderPrint')
+            .prop('disabled', true)
+            .html('<i class="fas fa-spinner fa-spin me-1"></i>Enviando...');
+        $('#sendOrder, #mobileSendOrder').prop('disabled', true);
+        return;
+    }
+
+    $('#confirmOrderPrint')
+        .prop('disabled', false)
+        .html('<i class="fas fa-print me-1"></i>Imprimir');
+}
+
+function startKitchenLoadTimeout() {
+    clearKitchenLoadTimeout();
+    kitchenLoadTimeoutId = setTimeout(function() {
+        if (!kitchenFrameLoaded) {
+            handleKitchenFrameLoadError();
+        }
+    }, 8000);
+}
+
+function clearKitchenLoadTimeout() {
+    if (kitchenLoadTimeoutId) {
+        clearTimeout(kitchenLoadTimeoutId);
+        kitchenLoadTimeoutId = null;
+    }
+}
+
+function handleKitchenFrameLoadError() {
+    clearKitchenLoadTimeout();
+    $('#kitchenPrintStatus').text('No se pudo cargar automáticamente la comanda. Reintenta la carga.');
+    $('#retryKitchenLoad').show();
+    $('#printKitchenNow').prop('disabled', true);
+    showToast('warning', 'No se pudo cargar la vista de impresión. Usa "Reintentar cargar".');
+}
+
+function retryKitchenPrintLoad() {
+    if (!currentKitchenPrintUrl || !kitchenPrintFrame) {
+        return;
+    }
+
+    kitchenFrameLoaded = false;
+    shouldAutoPrintKitchen = true;
+    $('#printKitchenNow').prop('disabled', true);
+    $('#retryKitchenLoad').hide();
+    $('#kitchenPrintStatus').text('Reintentando carga de comanda...');
+    startKitchenLoadTimeout();
+    kitchenPrintFrame.src = currentKitchenPrintUrl;
+}
+
+function scheduleKitchenModalAutoClose() {
+    clearAutoCloseKitchenModalTimeout();
+    autoCloseKitchenModalTimeoutId = setTimeout(function() {
+        const modalEl = document.getElementById('kitchenPrintModal');
+        if (modalEl && modalEl.classList.contains('show')) {
+            kitchenPrintModal.hide();
+        }
+    }, 2500);
+}
+
+function clearAutoCloseKitchenModalTimeout() {
+    if (autoCloseKitchenModalTimeoutId) {
+        clearTimeout(autoCloseKitchenModalTimeoutId);
+        autoCloseKitchenModalTimeoutId = null;
+    }
+}
+
+function showToast(type, message) {
+    const container = document.getElementById('appToastContainer');
+    if (!container) {
+        return;
+    }
+
+    const toneMap = {
+        success: 'text-bg-success',
+        warning: 'text-bg-warning',
+        danger: 'text-bg-danger',
+        info: 'text-bg-primary',
+    };
+    const tone = toneMap[type] || toneMap.info;
+    const toastId = `toast-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+    const toastHtml = `
+        <div id="${toastId}" class="toast ${tone} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+            </div>
+        </div>
+    `;
+
+    container.insertAdjacentHTML('beforeend', toastHtml);
+    const toastEl = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastEl, { delay: 3500 });
+    toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+    toast.show();
 }
 </script>
 @endsection

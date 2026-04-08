@@ -74,6 +74,15 @@ class CashierController extends Controller
         return view('cashier.dashboard', compact('pendingOrders', 'todayOrders', 'todaySales', 'products', 'waiters', 'availableTables', 'tableBoard', 'currentCashSession'));
     }
 
+    public function stock()
+    {
+        $products = Product::where('active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'price', 'stock']);
+
+        return view('cashier.stock', compact('products'));
+    }
+
     public function tables()
     {
         $tableBoard = DiningTable::query()
@@ -151,7 +160,7 @@ class CashierController extends Controller
                 'qr_paid_amount' => 'nullable|numeric|min:0',
             ]);
 
-            $order = Order::with(['details.product'])->findOrFail($id);
+            $order = Order::with(['details.product', 'audits'])->findOrFail($id);
 
             if ($order->status !== 'pending') {
                 return redirect()->back()->with('error', 'Esta orden ya fue procesada');
@@ -159,20 +168,26 @@ class CashierController extends Controller
 
             DB::beginTransaction();
 
-            foreach ($order->details as $detail) {
-                $product = $detail->product;
-                if (!$product) {
-                    DB::rollBack();
-                    return redirect()->back()->with('error', 'Producto no encontrado en el pedido.');
-                }
-                if ($product->stock < $detail->quantity) {
-                    DB::rollBack();
-                    return redirect()->back()->with('error', 'Stock insuficiente para ' . $product->name);
-                }
-            }
+            $hasReservedStock = $order->audits->contains(function (OrderAudit $audit) {
+                return (bool) data_get($audit->meta, 'stock_reserved', false);
+            });
 
-            foreach ($order->details as $detail) {
-                $detail->product->decrement('stock', $detail->quantity);
+            if (!$hasReservedStock) {
+                foreach ($order->details as $detail) {
+                    $product = $detail->product;
+                    if (!$product) {
+                        DB::rollBack();
+                        return redirect()->back()->with('error', 'Producto no encontrado en el pedido.');
+                    }
+                    if ($product->stock < $detail->quantity) {
+                        DB::rollBack();
+                        return redirect()->back()->with('error', 'Stock insuficiente para ' . $product->name);
+                    }
+                }
+
+                foreach ($order->details as $detail) {
+                    $detail->product->decrement('stock', $detail->quantity);
+                }
             }
 
             $paymentMethod = $request->payment_method;
@@ -325,12 +340,11 @@ class CashierController extends Controller
         ));
     }
 
-    public function cancelOrder($id)
+    public function cancelOrder($id, OrderWorkflowService $workflow)
     {
         try {
             $order = Order::where('status', 'pending')->findOrFail($id);
-            $order->update(['status' => 'cancelled']);
-            $this->logAudit($order->id, 'cancelled', []);
+            $workflow->cancelPendingOrder($order, Auth::id());
             return redirect()->back()->with('success', 'Pedido cancelado exitosamente');
         } catch (\Exception $e) {
             Log::error('Error al cancelar pedido', ['order_id' => $id, 'error' => $e->getMessage()]);
@@ -351,12 +365,6 @@ class CashierController extends Controller
             }
 
             DB::beginTransaction();
-            foreach ($order->details as $detail) {
-                if ($detail->product) {
-                    $detail->product->increment('stock', $detail->quantity);
-                }
-            }
-
             $order->update([
                 'status' => 'pending',
                 'cashier_id' => null,

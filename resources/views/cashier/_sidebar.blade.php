@@ -19,4 +19,9 @@
             <i class="fas fa-chart-line"></i> Ventas
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {{ request()->routeIs('cashier.stock') ? 'active' : '' }}" href="{{ route('cashier.stock') }}">
+            <i class="fas fa-boxes-stacked"></i> Stock Productos
+        </a>
+    </li>
 </ul>

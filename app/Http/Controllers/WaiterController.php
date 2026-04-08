@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\DiningTable;
 use App\Models\Order;
-use App\Models\OrderAudit;
 use App\Models\Product;
 use App\Services\KitchenPrintService;
 use App\Services\OrderWorkflowService;
@@ -72,24 +71,52 @@ class WaiterController extends Controller
         }
     }
 
-    public function myOrders(KitchenPrintService $kitchenPrint)
+    public function myOrders(Request $request, KitchenPrintService $kitchenPrint)
     {
-        $orders = Order::where('user_id', Auth::id())
+        $currentView = $request->query('view', 'pending');
+        if (!in_array($currentView, ['pending', 'completed', 'cancelled'], true)) {
+            $currentView = 'pending';
+        }
+
+        $baseQuery = Order::where('user_id', Auth::id());
+
+        $ordersQuery = (clone $baseQuery)
             ->with(['details.product', 'cashier', 'diningTable', 'audits'])
-            ->latest()
-            ->paginate(20);
+            ->latest();
+
+        if ($currentView === 'completed') {
+            $ordersQuery->where('status', 'completed');
+        } elseif ($currentView === 'cancelled') {
+            $ordersQuery->where('status', 'cancelled');
+        } else {
+            $ordersQuery->whereIn('status', ['pending', 'processing']);
+        }
+
+        $orders = $ordersQuery->paginate(20)->withQueryString();
 
         $orders->getCollection()->transform(function (Order $order) use ($kitchenPrint) {
             $order->can_print_added = $order->status === 'pending' && $kitchenPrint->hasPrintableAddedItems($order);
             return $order;
         });
 
+        $pendingCount = (clone $baseQuery)
+            ->whereIn('status', ['pending', 'processing'])
+            ->count();
+
+        $completedCount = (clone $baseQuery)
+            ->where('status', 'completed')
+            ->count();
+
+        $cancelledCount = (clone $baseQuery)
+            ->where('status', 'cancelled')
+            ->count();
+
         $products = Product::where('active', true)
             ->with('category')
             ->orderBy('name')
-            ->get(['id', 'name', 'price', 'category_id']);
+            ->get(['id', 'name', 'price', 'stock', 'category_id']);
 
-        return view('waiter.orders', compact('orders', 'products'));
+        return view('waiter.orders', compact('orders', 'products', 'currentView', 'pendingCount', 'completedCount', 'cancelledCount'));
     }
 
     public function orderDetails($id, OrderWorkflowService $workflow)
@@ -180,22 +207,14 @@ class WaiterController extends Controller
         }
     }
 
-    public function cancelOrder($id)
+    public function cancelOrder($id, OrderWorkflowService $workflow)
     {
         $order = Order::where('user_id', Auth::id())
             ->where('id', $id)
             ->where('status', 'pending')
             ->firstOrFail();
 
-        $order->update(['status' => 'cancelled']);
-
-        OrderAudit::create([
-            'order_id' => $order->id,
-            'user_id' => Auth::id(),
-            'action' => 'cancelled',
-            'meta' => [],
-            'created_at' => now(),
-        ]);
+        $workflow->cancelPendingOrder($order, Auth::id());
 
         return redirect()->back()->with('success', 'Pedido cancelado exitosamente');
     }

@@ -91,6 +91,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/order/{id}/receipt', [CashierController::class, 'printReceipt'])->name('print-receipt');
         Route::get('/order/{id}/download', [CashierController::class, 'downloadReceipt'])->name('download-receipt');
         Route::get('/sales', [CashierController::class, 'sales'])->name('sales');
+        Route::get('/stock', [CashierController::class, 'stock'])->name('stock');
         Route::get('/sales/print', [CashierController::class, 'salesPrint'])->name('sales.print');
     });
     

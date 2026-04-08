@@ -54,6 +54,8 @@ class OrderWorkflowService
         return DB::transaction(function () use ($waiter, $items, $tableId, $auditUserId, $useCustomPrice) {
             $resolvedItems = $this->normalizeOrderItems($items, $waiter->isDeliveryWaiter(), $useCustomPrice);
             $table = $this->resolveTableForWaiter($waiter, $tableId);
+            $requestedQuantities = $this->groupQuantitiesByProductFromItems($resolvedItems);
+            $this->applyStockDelta(collect(), $requestedQuantities);
 
             $order = Order::create([
                 'user_id' => $waiter->id,
@@ -75,6 +77,7 @@ class OrderWorkflowService
                 'table_number' => $order->table_number,
                 'waiter_id' => $order->user_id,
                 'service_mode' => $order->service_mode,
+                'stock_reserved' => true,
                 'items' => $resolvedItems->values()->all(),
             ]);
 
@@ -87,6 +90,13 @@ class OrderWorkflowService
         return DB::transaction(function () use ($order, $waiter, $items, $tableId, $auditUserId, $useCustomPrice) {
             $resolvedItems = $this->normalizeOrderItems($items, $waiter->isDeliveryWaiter(), $useCustomPrice);
             $table = $this->resolveTableForWaiter($waiter, $tableId, $order);
+            $order->loadMissing('details');
+            $hasReservedStock = $this->orderHasReservedStock($order);
+            $beforeQuantities = $hasReservedStock
+                ? $this->groupQuantitiesByProductFromDetails($order->details)
+                : collect();
+            $afterQuantities = $this->groupQuantitiesByProductFromItems($resolvedItems);
+            $this->applyStockDelta($beforeQuantities, $afterQuantities);
 
             $before = [
                 'table_id' => $order->table_id,
@@ -128,8 +138,34 @@ class OrderWorkflowService
             ];
 
             $this->logAudit($order->id, $auditUserId, 'updated', [
+                'stock_reserved' => true,
                 'before' => $before,
                 'after' => $after,
+            ]);
+
+            return $order;
+        });
+    }
+
+    public function cancelPendingOrder(Order $order, int $auditUserId): Order
+    {
+        return DB::transaction(function () use ($order, $auditUserId) {
+            $order->refresh();
+            if ($order->status !== 'pending') {
+                throw new \RuntimeException('Solo se pueden cancelar pedidos pendientes.');
+            }
+
+            $order->loadMissing('details');
+            $hasReservedStock = $this->orderHasReservedStock($order);
+            if ($hasReservedStock) {
+                $beforeQuantities = $this->groupQuantitiesByProductFromDetails($order->details);
+                $this->applyStockDelta($beforeQuantities, collect());
+            }
+
+            $order->update(['status' => 'cancelled']);
+
+            $this->logAudit($order->id, $auditUserId, 'cancelled', [
+                'restored_stock' => $hasReservedStock,
             ]);
 
             return $order;
@@ -263,5 +299,81 @@ class OrderWorkflowService
             'meta' => $meta,
             'created_at' => now(),
         ]);
+    }
+
+    private function groupQuantitiesByProductFromItems(Collection $items): Collection
+    {
+        return $items
+            ->groupBy(fn ($item) => (int) ($item['product_id'] ?? 0))
+            ->map(fn (Collection $group) => (int) $group->sum(fn ($item) => (int) ($item['quantity'] ?? 0)));
+    }
+
+    private function groupQuantitiesByProductFromDetails(Collection $details): Collection
+    {
+        return $details
+            ->groupBy(fn (OrderDetail $detail) => (int) $detail->product_id)
+            ->map(fn (Collection $group) => (int) $group->sum(fn (OrderDetail $detail) => (int) $detail->quantity));
+    }
+
+    private function applyStockDelta(Collection $beforeQuantities, Collection $afterQuantities): void
+    {
+        $productIds = $beforeQuantities->keys()
+            ->merge($afterQuantities->keys())
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($productIds->isEmpty()) {
+            return;
+        }
+
+        $products = Product::query()
+            ->with('category')
+            ->whereIn('id', $productIds)
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        foreach ($productIds as $productId) {
+            /** @var Product|null $product */
+            $product = $products->get($productId);
+            if (!$product) {
+                throw new \RuntimeException('Producto no encontrado para actualizar stock.');
+            }
+
+            if ($product->hasInfiniteStock()) {
+                continue;
+            }
+
+            $beforeQty = (int) ($beforeQuantities->get((string) $productId) ?? $beforeQuantities->get($productId) ?? 0);
+            $afterQty = (int) ($afterQuantities->get((string) $productId) ?? $afterQuantities->get($productId) ?? 0);
+            $delta = $afterQty - $beforeQty;
+
+            if ($delta === 0) {
+                continue;
+            }
+
+            $currentStock = (int) $product->stock;
+
+            if ($delta > 0 && $currentStock < $delta) {
+                throw new \RuntimeException('Stock insuficiente para ' . $product->name . '. Disponible: ' . $currentStock . '.');
+            }
+
+            $product->stock = $delta > 0
+                ? ($currentStock - $delta)
+                : ($currentStock + abs($delta));
+
+            $product->save();
+        }
+    }
+
+    private function orderHasReservedStock(Order $order): bool
+    {
+        $order->loadMissing('audits');
+
+        return $order->audits->contains(function (OrderAudit $audit) {
+            return (bool) data_get($audit->meta, 'stock_reserved', false);
+        });
     }
 }

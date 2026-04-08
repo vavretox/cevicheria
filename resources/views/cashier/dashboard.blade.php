@@ -86,6 +86,14 @@
     opacity: 0.65;
 }
 
+#quickTableBoardSection.table-board-disabled {
+    opacity: 0.55;
+}
+
+#quickTableBoardSection.table-board-disabled .table-board {
+    pointer-events: none;
+}
+
 .table-card.available {
     background: #ffffff;
     border-color: #dbe4ee;
@@ -140,6 +148,7 @@
     border-radius: 14px;
     padding: 12px 14px;
 }
+
 </style>
 @endsection
 
@@ -236,8 +245,18 @@
                 <label class="form-label">Producto</label>
                 <select class="form-select" id="quickProduct">
                     @foreach($products as $product)
-                        <option value="{{ $product->id }}" data-price="{{ $product->price }}" data-stock="{{ $product->stock }}">
-                            {{ $product->name }} (Bs. {{ number_format($product->price, 2) }}){{ (int) $product->stock < 10 ? ' - Stock: ' . $product->stock : '' }}
+                        <option
+                            value="{{ $product->id }}"
+                            data-price="{{ $product->price }}"
+                            data-stock="{{ $product->stock }}"
+                            {{ (int) $product->stock <= 0 ? 'disabled' : '' }}
+                        >
+                            {{ $product->name }} (Bs. {{ number_format($product->price, 2) }})
+                            @if((int) $product->stock <= 0)
+                                - Agotado
+                            @elseif((int) $product->stock < 10)
+                                - Stock: {{ $product->stock }}
+                            @endif
                         </option>
                     @endforeach
                 </select>
@@ -270,6 +289,8 @@
                         class="table-card {{ $status }} {{ $selectable ? '' : 'is-disabled' }}"
                         data-table-id="{{ $table->id }}"
                         data-selectable="{{ $selectable ? '1' : '0' }}"
+                        {{ $selectable ? '' : 'disabled' }}
+                        aria-disabled="{{ $selectable ? 'false' : 'true' }}"
                     >
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <strong>{{ $table->name }}</strong>
@@ -436,22 +457,67 @@ let quickItems = [];
 let quickItemCounter = 0;
 const quickOrderModal = new bootstrap.Modal(document.getElementById('quickOrderModal'));
 
+function getQuickProductStock(product) {
+    return Number(product?.stock ?? 0);
+}
+
+function getQuickRequestedQty(productId, exceptItemKey = null) {
+    return quickItems
+        .filter(item => Number(item.product_id) === Number(productId) && item.item_key !== exceptItemKey)
+        .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+}
+
+function updateQuickProductAvailability() {
+    const $select = $('#quickProduct');
+    const currentValue = String($select.val() || '');
+    let firstAvailableValue = '';
+
+    $select.find('option').each(function() {
+        const stock = Number($(this).data('stock') || 0);
+        const isAvailable = stock > 0;
+        $(this).prop('disabled', !isAvailable);
+        if (isAvailable && !firstAvailableValue) {
+            firstAvailableValue = String($(this).val() || '');
+        }
+    });
+
+    const selectedOptionIsDisabled = $select.find('option:selected').prop('disabled');
+    if ((!currentValue || selectedOptionIsDisabled) && firstAvailableValue) {
+        $select.val(firstAvailableValue);
+    }
+
+    const hasAnyAvailable = $select.find('option:not(:disabled)').length > 0;
+    $('#quickProduct').prop('disabled', !hasAnyAvailable);
+    $('#quickQty').prop('disabled', !hasAnyAvailable);
+    $('#quickAdd').prop('disabled', !hasAnyAvailable);
+}
+
 function selectedWaiterIsDelivery() {
     const selectedOption = $('#quickWaiter option:selected');
-    return String(selectedOption.data('is-delivery')) === '1';
+    const flaggedDelivery = String(selectedOption.data('is-delivery')) === '1';
+    const waiterLabel = String(selectedOption.text() || '').trim().toLowerCase();
+    return flaggedDelivery || waiterLabel.includes('delivery');
 }
 
 function syncQuickWaiterMode() {
     const isDelivery = selectedWaiterIsDelivery();
     $('#deliveryHelper').toggle(isDelivery);
-    $('#quickTableSection').toggle(!isDelivery);
-    $('#quickTableBoardSection').toggle(!isDelivery);
+    $('#quickTableSection').toggleClass('opacity-50', isDelivery);
+    $('#quickTableBoardSection').toggleClass('table-board-disabled', isDelivery);
 
     if (isDelivery) {
         $('#quickTable').val('');
-        $('#quickTableBoard .table-card').removeClass('selected');
-        $('#quickTableLabel').text('Delivery seleccionado. No es necesario asignar mesa.');
+        $('#quickTableBoard .table-card')
+            .removeClass('selected')
+            .prop('disabled', true)
+            .attr('aria-disabled', 'true');
+        $('#quickTableLabel').text('Delivery seleccionado. Mesas desactivadas: no es necesario asignar mesa.');
     } else {
+        $('#quickTableBoard .table-card').each(function() {
+            const selectable = String($(this).data('selectable')) === '1';
+            $(this).prop('disabled', !selectable);
+            $(this).attr('aria-disabled', selectable ? 'false' : 'true');
+        });
         $('#quickTableLabel').text('Selecciona una mesa desde el tablero.');
     }
 }
@@ -512,7 +578,23 @@ function syncQtyInputs() {
             if (!qty || qty <= 0) {
                 quickItems = quickItems.filter(i => i.item_key !== id);
             } else {
-                item.quantity = qty;
+                const product = quickProducts.find(p => Number(p.id) === Number(item.product_id));
+                const stock = getQuickProductStock(product);
+                const requestedWithoutThisItem = getQuickRequestedQty(item.product_id, item.item_key);
+
+                if (stock <= 0) {
+                    alert(`${item.name} está agotado.`);
+                    quickItems = quickItems.filter(i => i.item_key !== id);
+                } else if ((requestedWithoutThisItem + qty) > stock) {
+                    const maxAllowedQty = Math.max(stock - requestedWithoutThisItem, 1);
+                    alert(`No hay suficiente stock de ${item.name}. Disponible: ${stock}.`);
+                    item.quantity = maxAllowedQty;
+                } else {
+                    if (stock < 10) {
+                        alert(`Advertencia: ${item.name} está por acabarse (stock: ${stock}).`);
+                    }
+                    item.quantity = qty;
+                }
             }
         } else if (field === 'price') {
             const price = parseFloat($(this).val());
@@ -543,6 +625,22 @@ $('#quickAdd').on('click', function() {
     const product = quickProducts.find(p => p.id === productId);
     if (!product) return;
 
+    const stock = getQuickProductStock(product);
+    if (stock <= 0) {
+        alert(`${product.name} está agotado.`);
+        return;
+    }
+
+    const requestedQty = getQuickRequestedQty(productId);
+    if ((requestedQty + qty) > stock) {
+        alert(`No hay suficiente stock de ${product.name}. Disponible: ${stock}.`);
+        return;
+    }
+
+    if (stock < 10) {
+        alert(`Advertencia: quedan pocas unidades de ${product.name} (stock: ${stock}).`);
+    }
+
     quickItems.push({
         item_key: nextQuickItemKey(),
         product_id: productId,
@@ -556,11 +654,30 @@ $('#quickAdd').on('click', function() {
     bindRemoveButtons();
 });
 
+$('#quickProduct').on('change', function() {
+    const productId = parseInt($(this).val(), 10);
+    const product = quickProducts.find(p => Number(p.id) === Number(productId));
+    if (!product) {
+        return;
+    }
+
+    const stock = getQuickProductStock(product);
+    if (stock <= 0) {
+        alert(`${product.name} está agotado.`);
+        return;
+    }
+
+    if (stock < 10) {
+        alert(`Advertencia: ${product.name} está por acabarse (stock: ${stock}).`);
+    }
+});
+
 $('#quickClear').on('click', function() {
     quickItems = [];
     $('#quickTable').val('');
     $('#quickTableBoard .table-card').removeClass('selected');
     renderQuickItems();
+    syncQuickWaiterMode();
 });
 
 $('#quickSend').on('click', function() {
@@ -589,7 +706,7 @@ $('#quickSend').on('click', function() {
         url: '{{ route("cashier.create-order") }}',
         method: 'POST',
         data: {
-            table_id: isDelivery ? '' : tableId,
+            table_id: isDelivery ? null : (tableId || null),
             waiter_id: waiterId,
             items: quickItems
         },
@@ -700,6 +817,7 @@ function openQuickView(orderId) {
 }
 
 renderQuickItems();
+updateQuickProductAvailability();
 syncQuickWaiterMode();
 </script>
 @endsection

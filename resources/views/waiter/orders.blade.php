@@ -14,6 +14,11 @@
             <i class="fas fa-list"></i> Mis Pedidos
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {{ request()->routeIs('waiter.manual') ? 'active' : '' }}" href="{{ route('waiter.manual') }}">
+            <i class="fas fa-book"></i> Manual de Usuario
+        </a>
+    </li>
 </ul>
 @endsection
 

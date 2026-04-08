@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CashierController;
 use App\Http\Controllers\CashSessionController;
+use App\Http\Controllers\ManualController;
 use App\Http\Controllers\WaiterController;
 
 // Rutas públicas
@@ -70,6 +71,7 @@ Route::middleware(['auth'])->group(function () {
         // Se reactiva cuando retomemos ese modulo.
         Route::get('/cash-sessions', [CashSessionController::class, 'adminIndex'])->name('cash-sessions');
         Route::get('/cash-sessions/print', [CashSessionController::class, 'adminPrint'])->name('cash-sessions.print');
+        Route::get('/manual', [ManualController::class, 'admin'])->name('manual');
     });
     
     // Rutas del Cajero
@@ -93,6 +95,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/sales', [CashierController::class, 'sales'])->name('sales');
         Route::get('/stock', [CashierController::class, 'stock'])->name('stock');
         Route::get('/sales/print', [CashierController::class, 'salesPrint'])->name('sales.print');
+        Route::get('/manual', [ManualController::class, 'cashier'])->name('manual');
     });
     
     // Rutas del Mesero
@@ -104,5 +107,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/orders/{id}/print/{scope?}', [WaiterController::class, 'printOrder'])->name('print-order');
         Route::post('/orders/{id}/items', [WaiterController::class, 'updateOrderItems'])->name('update-order-items');
         Route::post('/orders/{id}/cancel', [WaiterController::class, 'cancelOrder'])->name('cancel-order');
+        Route::get('/manual', [ManualController::class, 'waiter'])->name('manual');
     });
 });

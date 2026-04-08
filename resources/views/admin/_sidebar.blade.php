@@ -46,4 +46,9 @@
             <i class="fas fa-chart-bar"></i> Reportes
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {{ request()->routeIs('admin.manual') ? 'active' : '' }}" href="{{ route('admin.manual') }}">
+            <i class="fas fa-book"></i> Manual de Usuario
+        </a>
+    </li>
 </ul>

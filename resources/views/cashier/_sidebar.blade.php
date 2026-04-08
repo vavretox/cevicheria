@@ -24,4 +24,9 @@
             <i class="fas fa-boxes-stacked"></i> Stock Productos
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link {{ request()->routeIs('cashier.manual') ? 'active' : '' }}" href="{{ route('cashier.manual') }}">
+            <i class="fas fa-book"></i> Manual de Usuario
+        </a>
+    </li>
 </ul>

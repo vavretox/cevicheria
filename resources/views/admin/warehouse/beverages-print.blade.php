@@ -6,9 +6,11 @@
     <title>Historial Almacén de Bebidas</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: Cambria, Georgia, "Times New Roman", serif;
             color: #111827;
             margin: 24px;
+            font-size: 13px;
+            line-height: 1.35;
         }
 
         h1, h2, h3 {

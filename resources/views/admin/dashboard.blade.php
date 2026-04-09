@@ -135,7 +135,7 @@
                     <tr>
                         <td><strong>#{{ $order->display_number }}</strong></td>
                         <td>{{ $order->created_at->format('d/m/Y H:i') }}</td>
-                        <td>{{ $order->table_number }}</td>
+                        <td>{{ $order->table_label }}</td>
                         <td>{{ $order->user->name }}</td>
                         <td>{{ $order->cashier ? $order->cashier->name : '-' }}</td>
                         <td><strong class="text-success">Bs. {{ number_format($order->total, 2) }}</strong></td>

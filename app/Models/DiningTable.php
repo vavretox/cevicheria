@@ -16,6 +16,7 @@ class DiningTable extends Model
         'zone',
         'capacity',
         'active',
+        'merged_into_table_id',
         'reservation_name',
         'reservation_at',
         'reservation_notes',
@@ -32,6 +33,16 @@ class DiningTable extends Model
         return $this->hasMany(Order::class, 'table_id');
     }
 
+    public function mergedInto()
+    {
+        return $this->belongsTo(self::class, 'merged_into_table_id');
+    }
+
+    public function mergedChildren()
+    {
+        return $this->hasMany(self::class, 'merged_into_table_id');
+    }
+
     public function activeOrders()
     {
         return $this->hasMany(Order::class, 'table_id')
@@ -41,6 +52,66 @@ class DiningTable extends Model
     public function isReserved(): bool
     {
         return !empty($this->reservation_name) && $this->reservation_at !== null;
+    }
+
+    public function isMergedChild(): bool
+    {
+        return $this->merged_into_table_id !== null;
+    }
+
+    public function hasMergedChildren(): bool
+    {
+        if ($this->relationLoaded('mergedChildren')) {
+            return $this->mergedChildren->isNotEmpty();
+        }
+
+        return $this->mergedChildren()->exists();
+    }
+
+    public function getMergedMembersAttribute()
+    {
+        $children = $this->relationLoaded('mergedChildren')
+            ? $this->mergedChildren
+            : $this->mergedChildren()->get();
+
+        return collect([$this])
+            ->merge($children)
+            ->sortBy('name')
+            ->values();
+    }
+
+    public function getMergedDisplayNameAttribute(): string
+    {
+        return $this->merged_members
+            ->pluck('name')
+            ->join(' + ');
+    }
+
+    public function getCombinedCapacityAttribute(): ?int
+    {
+        $capacities = $this->merged_members
+            ->pluck('capacity')
+            ->filter(fn ($capacity) => $capacity !== null);
+
+        if ($capacities->isEmpty()) {
+            return null;
+        }
+
+        return (int) $capacities->sum();
+    }
+
+    public function getGroupReservationSummaryAttribute(): ?string
+    {
+        $reservedMembers = $this->merged_members
+            ->filter(fn (self $table) => $table->isReserved());
+
+        if ($reservedMembers->isEmpty()) {
+            return null;
+        }
+
+        return $reservedMembers
+            ->map(fn (self $table) => $table->name . ': ' . $table->reservation_name)
+            ->join(' | ');
     }
 
     public function getUiStatusAttribute(): string
@@ -58,5 +129,10 @@ class DiningTable extends Model
         }
 
         return 'available';
+    }
+
+    public function scopeRoots($query)
+    {
+        return $query->whereNull('merged_into_table_id');
     }
 }

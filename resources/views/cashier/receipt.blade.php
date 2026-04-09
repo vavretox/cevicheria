@@ -18,10 +18,12 @@
         }
 
         body {
-            font-family: 'Courier New', monospace;
+            font-family: Cambria, Georgia, "Times New Roman", serif;
             max-width: 80mm;
             margin: 0 auto;
             padding: 20px;
+            font-size: 13px;
+            line-height: 1.35;
         }
 
         .receipt-header {
@@ -39,7 +41,7 @@
 
         .receipt-info {
             margin-bottom: 15px;
-            font-size: 12px;
+            font-size: 13px;
         }
 
         .receipt-info p {
@@ -49,7 +51,7 @@
         .receipt-table {
             width: 100%;
             margin-bottom: 15px;
-            font-size: 12px;
+            font-size: 13px;
         }
 
         .receipt-table th,
@@ -71,7 +73,7 @@
 
         .receipt-total p {
             margin: 3px 0;
-            font-size: 13px;
+            font-size: 14px;
         }
 
         .receipt-total .total-amount {
@@ -84,7 +86,7 @@
             border-top: 2px dashed #000;
             padding-top: 15px;
             margin-top: 15px;
-            font-size: 11px;
+            font-size: 12px;
         }
 
         .text-right {
@@ -111,7 +113,7 @@
             <p><strong>BOLETA DE VENTA</strong></p>
             <p>Nro: {{ $order->display_number }}</p>
             <p>Fecha: {{ $order->completed_at ? $order->completed_at->format('d/m/Y H:i:s') : $order->created_at->format('d/m/Y H:i:s') }}</p>
-            <p>Mesa: {{ $order->table_number }}</p>
+            <p>Mesa: {{ $order->table_label }}</p>
             <p>Atendido por: {{ $order->user->name }}</p>
             @if($order->cashier)
             <p>Cajero: {{ $order->cashier->name }}</p>

@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\DiningTable;
+use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\OrderAudit;
 use App\Models\Product;
+use App\Models\ProductStockHistory;
 use App\Models\User;
 use App\Services\KitchenPrintService;
 use App\Services\OrderWorkflowService;
@@ -76,25 +78,225 @@ class CashierController extends Controller
 
     public function stock()
     {
-        $products = Product::where('active', true)
+        $categories = Category::query()
+            ->where('active', true)
+            ->with(['activeProducts' => function ($query) {
+                $query->orderBy('name');
+            }])
             ->orderBy('name')
-            ->get(['id', 'name', 'price', 'stock']);
+            ->get();
 
-        return view('cashier.stock', compact('products'));
+        $uncategorizedProducts = Product::query()
+            ->where('active', true)
+            ->whereNull('category_id')
+            ->orderBy('name')
+            ->get();
+
+        $foodCategoryCodes = [
+            Category::CODE_CEVICHES,
+            Category::CODE_MAIN_DISHES,
+        ];
+
+        $foodStockHistories = ProductStockHistory::query()
+            ->with(['product.category', 'user'])
+            ->whereHas('product.category', function ($query) use ($foodCategoryCodes) {
+                $query->whereIn('code', $foodCategoryCodes);
+            })
+            ->latest('stock_date')
+            ->latest('id')
+            ->take(30)
+            ->get();
+
+        return view('cashier.stock', compact('categories', 'uncategorizedProducts', 'foodStockHistories'));
     }
 
-    public function tables()
+    public function updateFoodStock(Request $request)
     {
-        $tableBoard = DiningTable::query()
-            ->withCount('activeOrders')
-            ->with(['activeOrders' => function ($query) {
+        $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'stock' => 'required|integer|min:0',
+            'notes' => 'nullable|string|max:255',
+            'stock_date' => 'nullable|date',
+        ]);
+
+        $product = Product::query()
+            ->with('category')
+            ->findOrFail($request->integer('product_id'));
+
+        if (!in_array($product->category?->code, [
+            Category::CODE_CEVICHES,
+            Category::CODE_MAIN_DISHES,
+        ], true)) {
+            return redirect()->route('cashier.stock')
+                ->with('error', 'Solo puedes registrar stock diario para productos alimenticios.');
+        }
+
+        $newStock = (int) $request->input('stock');
+        $stockDate = $request->filled('stock_date')
+            ? $request->date('stock_date')
+            : today();
+        $notes = $request->filled('notes')
+            ? trim((string) $request->input('notes'))
+            : null;
+
+        DB::transaction(function () use ($product, $newStock, $stockDate, $notes) {
+            $lockedProduct = Product::query()
+                ->whereKey($product->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $previousStock = (int) $lockedProduct->stock;
+
+            $lockedProduct->update([
+                'stock' => $newStock,
+                'unlimited_stock' => false,
+            ]);
+
+            ProductStockHistory::create([
+                'product_id' => $lockedProduct->id,
+                'user_id' => Auth::id(),
+                'stock_date' => $stockDate,
+                'stock_before' => $previousStock,
+                'stock_after' => $newStock,
+                'change_type' => 'daily_set',
+                'notes' => $notes,
+            ]);
+        });
+
+        return redirect()->route('cashier.stock')
+            ->with('success', 'Stock diario actualizado para ' . $product->name . '.');
+    }
+
+    public function tables(OrderWorkflowService $workflow)
+    {
+        $tableBoard = $workflow->getTableBoard()
+            ->load(['activeOrders' => function ($query) {
                 $query->with('user')->latest();
-            }])
+            }]);
+
+        $mergeableTables = DiningTable::query()
+            ->roots()
+            ->withCount('activeOrders')
             ->orderByRaw('COALESCE(zone, "")')
             ->orderBy('name')
-            ->get(['id', 'name', 'zone', 'active', 'reservation_name', 'reservation_at']);
+            ->get(['id', 'name', 'zone', 'capacity', 'active', 'merged_into_table_id']);
 
-        return view('cashier.tables', compact('tableBoard'));
+        return view('cashier.tables', compact('tableBoard', 'mergeableTables'));
+    }
+
+    public function storeTable(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255|unique:tables,name',
+            'zone' => 'nullable|string|max:255',
+            'capacity' => 'nullable|integer|min:1',
+            'active' => 'nullable|boolean',
+        ]);
+
+        DiningTable::create([
+            'name' => trim((string) $request->name),
+            'zone' => $request->filled('zone') ? trim((string) $request->zone) : null,
+            'capacity' => $request->filled('capacity') ? (int) $request->capacity : null,
+            'active' => $request->boolean('active', true),
+        ]);
+
+        return redirect()->route('cashier.tables')
+            ->with('success', 'Mesa creada correctamente desde caja.');
+    }
+
+    public function mergeTables(Request $request)
+    {
+        $request->validate([
+            'base_table_id' => 'required|integer|exists:tables,id',
+            'merged_table_ids' => 'required|array|min:1',
+            'merged_table_ids.*' => 'integer|distinct|exists:tables,id',
+        ]);
+
+        $baseTableId = $request->integer('base_table_id');
+        $mergedIds = collect($request->input('merged_table_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== $baseTableId)
+            ->unique()
+            ->values();
+
+        if ($mergedIds->isEmpty()) {
+            return redirect()->route('cashier.tables')
+                ->with('error', 'Debes seleccionar al menos una mesa adicional para fusionar.');
+        }
+
+        $tableIds = $mergedIds->concat([$baseTableId])->unique()->values();
+
+        $tables = DiningTable::query()
+            ->withCount('activeOrders')
+            ->whereIn('id', $tableIds)
+            ->get()
+            ->keyBy('id');
+
+        $baseTable = $tables->get($baseTableId);
+
+        if (!$baseTable || $baseTable->merged_into_table_id !== null) {
+            return redirect()->route('cashier.tables')
+                ->with('error', 'La mesa principal no es válida para fusionar.');
+        }
+
+        if (!$baseTable->active) {
+            return redirect()->route('cashier.tables')
+                ->with('error', 'La mesa principal debe estar habilitada para fusionar mesas.');
+        }
+
+        foreach ($mergedIds as $mergedId) {
+            $table = $tables->get($mergedId);
+
+            if (!$table || $table->merged_into_table_id !== null) {
+                return redirect()->route('cashier.tables')
+                    ->with('error', 'Una de las mesas seleccionadas ya pertenece a otra fusión.');
+            }
+
+            if (!$table->active) {
+                return redirect()->route('cashier.tables')
+                    ->with('error', 'Solo puedes fusionar mesas habilitadas.');
+            }
+
+            if ((int) $table->active_orders_count > 0) {
+                return redirect()->route('cashier.tables')
+                    ->with('error', 'Solo puedes agregar mesas sin pedido activo a una fusión.');
+            }
+        }
+
+        DB::transaction(function () use ($baseTable, $mergedIds) {
+            DiningTable::query()
+                ->whereIn('id', $mergedIds)
+                ->update(['merged_into_table_id' => $baseTable->id]);
+
+            $this->syncTableLabelForActiveOrders($baseTable->fresh('mergedChildren'));
+        });
+
+        return redirect()->route('cashier.tables')
+            ->with('success', 'Mesas fusionadas correctamente desde caja.');
+    }
+
+    public function unmergeTable($id)
+    {
+        $table = DiningTable::query()
+            ->roots()
+            ->with('mergedChildren')
+            ->findOrFail($id);
+
+        if ($table->mergedChildren->isEmpty()) {
+            return redirect()->route('cashier.tables')
+                ->with('error', 'Esta mesa no tiene mesas fusionadas.');
+        }
+
+        DB::transaction(function () use ($table) {
+            DiningTable::query()
+                ->where('merged_into_table_id', $table->id)
+                ->update(['merged_into_table_id' => null]);
+
+            $this->syncTableLabelForActiveOrders($table->fresh('mergedChildren'));
+        });
+
+        return redirect()->route('cashier.tables')
+            ->with('success', 'La fusión de mesas se deshizo desde caja.');
     }
 
     public function showOrder($id, OrderWorkflowService $workflow)
@@ -126,7 +328,7 @@ class CashierController extends Controller
         return response()->json([
             'id' => $order->id,
             'display_number' => $order->display_number,
-            'table' => $order->table_number ?: 'Delivery',
+            'table' => $order->table_label ?: 'Delivery',
             'service_mode' => $order->service_mode,
             'service_mode_label' => $order->service_mode_label,
             'status' => $order->status,
@@ -160,7 +362,7 @@ class CashierController extends Controller
                 'qr_paid_amount' => 'nullable|numeric|min:0',
             ]);
 
-            $order = Order::with(['details.product', 'audits'])->findOrFail($id);
+            $order = Order::with(['details.product', 'audits', 'diningTable.mergedChildren'])->findOrFail($id);
 
             if ($order->status !== 'pending') {
                 return redirect()->back()->with('error', 'Esta orden ya fue procesada');
@@ -239,6 +441,7 @@ class CashierController extends Controller
                 'cash_paid_amount' => $cashPaidAmount,
                 'qr_paid_amount' => $qrPaidAmount,
                 'change_amount' => $changeAmount,
+                'released_merged_tables' => $this->releaseMergedTablesAfterCompletion($order),
             ]);
 
             DB::commit();
@@ -335,7 +538,10 @@ class CashierController extends Controller
         $order = Order::with(['user', 'details.product.category'])
             ->findOrFail($id);
         return view('waiter.print-order', array_merge(
-            ['order' => $order],
+            [
+                'order' => $order,
+                'autoCloseAfterPrint' => true,
+            ],
             $kitchenPrint->buildMainPrintPayload($order)
         ));
     }
@@ -400,6 +606,44 @@ class CashierController extends Controller
             'meta' => $meta,
             'created_at' => now(),
         ]);
+    }
+
+    private function releaseMergedTablesAfterCompletion(Order $order): array
+    {
+        $table = $order->diningTable;
+
+        if (!$table) {
+            return [];
+        }
+
+        $table->loadMissing('mergedChildren');
+
+        if ($table->mergedChildren->isEmpty()) {
+            return [];
+        }
+
+        $releasedTables = $table->mergedChildren
+            ->pluck('name')
+            ->values()
+            ->all();
+
+        DiningTable::query()
+            ->where('merged_into_table_id', $table->id)
+            ->update(['merged_into_table_id' => null]);
+
+        return $releasedTables;
+    }
+
+    private function syncTableLabelForActiveOrders(DiningTable $table): void
+    {
+        $table->loadMissing('mergedChildren');
+
+        Order::query()
+            ->where('table_id', $table->id)
+            ->whereIn('status', ['pending', 'processing'])
+            ->update([
+                'table_number' => $table->merged_display_name,
+            ]);
     }
 
     private function formatAuditEntry(OrderAudit $audit, array $productNameMap): array

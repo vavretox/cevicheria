@@ -134,6 +134,14 @@
         }
 
         @media (min-width: 768px) {
+            .sidebar {
+                position: sticky;
+                top: 56px;
+                align-self: flex-start;
+                height: calc(100vh - 56px);
+                overflow-y: auto;
+            }
+
             #appShell.sidebar-collapsed .sidebar {
                 flex: 0 0 80px;
                 max-width: 80px;

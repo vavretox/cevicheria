@@ -20,10 +20,11 @@
         body {
             margin: 0;
             padding: 24px;
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            font-family: Cambria, Georgia, "Times New Roman", serif;
             color: var(--text);
             background: #fff;
-            font-size: 12px;
+            font-size: 13px;
+            line-height: 1.35;
         }
 
         .header {

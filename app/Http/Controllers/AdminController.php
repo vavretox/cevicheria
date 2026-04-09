@@ -126,12 +126,27 @@ class AdminController extends Controller
 
     public function tables()
     {
-        $tables = DiningTable::withCount(['orders', 'activeOrders'])
+        $tables = DiningTable::query()
+            ->roots()
+            ->withCount(['orders', 'activeOrders'])
+            ->with([
+                'mergedChildren' => function ($query) {
+                    $query->withCount('activeOrders')
+                        ->orderBy('name');
+                },
+            ])
             ->orderByRaw('COALESCE(zone, "")')
             ->orderBy('name')
             ->get();
 
-        return view('admin.tables.index', compact('tables'));
+        $mergeableTables = DiningTable::query()
+            ->roots()
+            ->withCount('activeOrders')
+            ->orderByRaw('COALESCE(zone, "")')
+            ->orderBy('name')
+            ->get(['id', 'name', 'zone', 'capacity', 'active', 'merged_into_table_id']);
+
+        return view('admin.tables.index', compact('tables', 'mergeableTables'));
     }
 
     public function storeTable(Request $request)
@@ -156,6 +171,7 @@ class AdminController extends Controller
     public function updateTable(Request $request, $id)
     {
         $table = DiningTable::withCount('activeOrders')->findOrFail($id);
+        $rootTableId = $table->merged_into_table_id ?: $table->id;
 
         $request->validate([
             'name' => 'required|string|max:255|unique:tables,name,' . $table->id,
@@ -177,12 +193,21 @@ class AdminController extends Controller
             'active' => $active,
         ]);
 
+        $rootTable = DiningTable::query()
+            ->with('mergedChildren')
+            ->find($rootTableId);
+
+        if ($rootTable) {
+            $this->syncTableLabelForActiveOrders($rootTable);
+        }
+
         return redirect()->route('admin.tables')->with('success', 'Mesa actualizada exitosamente');
     }
 
     public function deleteTable($id)
     {
         $table = DiningTable::withCount('orders')->findOrFail($id);
+        $rootTableId = $table->merged_into_table_id;
 
         if ($table->orders_count > 0) {
             return redirect()->route('admin.tables')
@@ -190,6 +215,16 @@ class AdminController extends Controller
         }
 
         $table->delete();
+
+        if ($rootTableId) {
+            $rootTable = DiningTable::query()
+                ->with('mergedChildren')
+                ->find($rootTableId);
+
+            if ($rootTable) {
+                $this->syncTableLabelForActiveOrders($rootTable);
+            }
+        }
 
         return redirect()->route('admin.tables')->with('success', 'Mesa eliminada exitosamente');
     }
@@ -220,6 +255,101 @@ class AdminController extends Controller
         return redirect()->route('admin.tables')->with('success', $hasReservationData ? 'Reserva actualizada exitosamente' : 'Reserva eliminada exitosamente');
     }
 
+    public function mergeTables(Request $request)
+    {
+        $request->validate([
+            'base_table_id' => 'required|integer|exists:tables,id',
+            'merged_table_ids' => 'required|array|min:1',
+            'merged_table_ids.*' => 'integer|distinct|exists:tables,id',
+        ]);
+
+        $baseTableId = $request->integer('base_table_id');
+        $mergedIds = collect($request->input('merged_table_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== $baseTableId)
+            ->unique()
+            ->values();
+
+        if ($mergedIds->isEmpty()) {
+            return redirect()->route('admin.tables')
+                ->with('error', 'Debes seleccionar al menos una mesa adicional para fusionar.');
+        }
+
+        $tableIds = $mergedIds->concat([$baseTableId])->unique()->values();
+
+        $tables = DiningTable::query()
+            ->withCount('activeOrders')
+            ->whereIn('id', $tableIds)
+            ->get()
+            ->keyBy('id');
+
+        $baseTable = $tables->get($baseTableId);
+
+        if (!$baseTable || $baseTable->merged_into_table_id !== null) {
+            return redirect()->route('admin.tables')
+                ->with('error', 'La mesa principal no es válida para fusionar.');
+        }
+
+        if (!$baseTable->active) {
+            return redirect()->route('admin.tables')
+                ->with('error', 'La mesa principal debe estar habilitada para fusionar mesas.');
+        }
+
+        foreach ($mergedIds as $mergedId) {
+            $table = $tables->get($mergedId);
+
+            if (!$table || $table->merged_into_table_id !== null) {
+                return redirect()->route('admin.tables')
+                    ->with('error', 'Una de las mesas seleccionadas ya pertenece a otra fusion.');
+            }
+
+            if (!$table->active) {
+                return redirect()->route('admin.tables')
+                    ->with('error', 'Solo puedes fusionar mesas habilitadas.');
+            }
+
+            if ((int) $table->active_orders_count > 0) {
+                return redirect()->route('admin.tables')
+                    ->with('error', 'Solo puedes agregar mesas sin pedido activo a una fusion.');
+            }
+        }
+
+        DB::transaction(function () use ($baseTable, $mergedIds) {
+            DiningTable::query()
+                ->whereIn('id', $mergedIds)
+                ->update(['merged_into_table_id' => $baseTable->id]);
+
+            $this->syncTableLabelForActiveOrders($baseTable->fresh('mergedChildren'));
+        });
+
+        return redirect()->route('admin.tables')
+            ->with('success', 'Mesas fusionadas. Ahora se muestran como una sola mesa operativa.');
+    }
+
+    public function unmergeTable($id)
+    {
+        $table = DiningTable::query()
+            ->roots()
+            ->with('mergedChildren')
+            ->findOrFail($id);
+
+        if ($table->mergedChildren->isEmpty()) {
+            return redirect()->route('admin.tables')
+                ->with('error', 'Esta mesa no tiene mesas fusionadas.');
+        }
+
+        DB::transaction(function () use ($table) {
+            DiningTable::query()
+                ->where('merged_into_table_id', $table->id)
+                ->update(['merged_into_table_id' => null]);
+
+            $this->syncTableLabelForActiveOrders($table->fresh('mergedChildren'));
+        });
+
+        return redirect()->route('admin.tables')
+            ->with('success', 'La fusion de mesas se deshizo correctamente.');
+    }
+
     public function tableActivity($id)
     {
         $table = DiningTable::findOrFail($id);
@@ -233,7 +363,7 @@ class AdminController extends Controller
                 return [
                     'id' => $order->id,
                     'status' => $order->status,
-                    'table_name' => $order->table_number,
+                    'table_name' => $order->table_label,
                     'waiter' => $order->user?->name ?? '-',
                     'cashier' => $order->cashier?->name ?? '-',
                     'total' => number_format((float) $order->total, 2, '.', ''),
@@ -289,6 +419,18 @@ class AdminController extends Controller
             'orders' => $orders,
             'movements' => $movements,
         ]);
+    }
+
+    private function syncTableLabelForActiveOrders(DiningTable $table): void
+    {
+        $table->loadMissing('mergedChildren');
+
+        Order::query()
+            ->where('table_id', $table->id)
+            ->whereIn('status', ['pending', 'processing'])
+            ->update([
+                'table_number' => $table->merged_display_name,
+            ]);
     }
 
     public function storeCategory(Request $request)
@@ -926,9 +1068,10 @@ class AdminController extends Controller
     {
         $dateFrom = $request->get('date_from');
         $dateTo = $request->get('date_to');
+        $selectedCategory = $request->get('category_id', 'all');
 
         $query = Order::where('status', 'completed')
-            ->with(['details.product'])
+            ->with(['details.product.category'])
             ->orderBy('completed_at');
 
         if ($dateFrom) {
@@ -940,9 +1083,37 @@ class AdminController extends Controller
         }
 
         $orders = $query->get();
-
-        $products = $orders
+        $categoryLabel = 'Todas';
+        $details = $orders
             ->flatMap(fn ($order) => $order->details)
+            ->filter(function ($detail) use ($selectedCategory, &$categoryLabel) {
+                if ($selectedCategory === null || $selectedCategory === '' || $selectedCategory === 'all') {
+                    return true;
+                }
+
+                $productCategory = $detail->product?->category;
+
+                if (!$productCategory) {
+                    return false;
+                }
+
+                if ($selectedCategory === Category::CODE_BEVERAGES) {
+                    $categoryLabel = 'Bebidas';
+
+                    return $productCategory->code === Category::CODE_BEVERAGES;
+                }
+
+                if ($selectedCategory === 'alimenticios') {
+                    $categoryLabel = 'Productos alimenticios';
+
+                    return $productCategory->code !== Category::CODE_BEVERAGES;
+                }
+
+                return false;
+            })
+            ->values();
+
+        $products = $details
             ->groupBy(fn ($detail) => $detail->product_id ?: 'deleted-' . $detail->id)
             ->map(function ($details) {
                 $first = $details->first();
@@ -958,11 +1129,12 @@ class AdminController extends Controller
 
         return view('admin.reports-thermal-print', [
             'products' => $products,
-            'ordersCount' => $orders->count(),
+            'ordersCount' => $details->pluck('order_id')->unique()->count(),
             'totalProducts' => $products->sum('quantity'),
             'grandTotal' => $products->sum('total'),
             'dateFrom' => $dateFrom,
             'dateTo' => $dateTo,
+            'categoryLabel' => $categoryLabel,
         ]);
     }
 

@@ -8,7 +8,7 @@
 
 @section('content')
 @php
-    $query = request()->only(['date_from', 'date_to']);
+    $query = request()->only(['date_from', 'date_to', 'category_id']);
 @endphp
 
 <style>
@@ -107,6 +107,14 @@
             <div class="col-md-4">
                 <label class="form-label fw-semibold">Fecha Hasta</label>
                 <input type="date" name="date_to" class="form-control" value="{{ request('date_to') }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Impresión térmica por categoría</label>
+                <select name="category_id" class="form-select">
+                    <option value="all" {{ request('category_id', 'all') === 'all' ? 'selected' : '' }}>Todo</option>
+                    <option value="bebidas" {{ request('category_id') === 'bebidas' ? 'selected' : '' }}>Bebidas</option>
+                    <option value="alimenticios" {{ request('category_id') === 'alimenticios' ? 'selected' : '' }}>Productos alimenticios</option>
+                </select>
             </div>
             <div class="col-md-4">
                 <div class="report-actions">

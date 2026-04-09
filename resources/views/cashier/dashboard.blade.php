@@ -288,12 +288,13 @@
                         type="button"
                         class="table-card {{ $status }} {{ $selectable ? '' : 'is-disabled' }}"
                         data-table-id="{{ $table->id }}"
+                        data-table-name="{{ $table->merged_display_name }}"
                         data-selectable="{{ $selectable ? '1' : '0' }}"
                         {{ $selectable ? '' : 'disabled' }}
                         aria-disabled="{{ $selectable ? 'false' : 'true' }}"
                     >
                         <div class="d-flex justify-content-between align-items-start mb-2">
-                            <strong>{{ $table->name }}</strong>
+                            <strong>{{ $table->merged_display_name }}</strong>
                             <span class="table-card-status">
                                 @if($status === 'available')
                                     Libre
@@ -309,9 +310,12 @@
                         @if($table->zone)
                             <div class="small text-muted mb-1">{{ $table->zone }}</div>
                         @endif
+                        <div class="small text-muted mb-1">Capacidad total: {{ $table->combined_capacity ?: '-' }}</div>
                         @if($table->isReserved())
                             <div class="small text-muted">{{ $table->reservation_name }}</div>
                             <div class="small text-muted">{{ $table->reservation_at?->format('d/m H:i') }}</div>
+                        @elseif($table->group_reservation_summary)
+                            <div class="small text-muted">{{ $table->group_reservation_summary }}</div>
                         @endif
                     </button>
                 @endforeach
@@ -365,7 +369,7 @@
                         <span class="badge {{ $order->service_mode === 'takeaway' ? 'bg-warning text-dark' : ($order->service_mode === 'mixed' ? 'bg-info text-dark' : 'bg-secondary') }}">
                             {{ $order->service_mode_label }}
                         </span>
-                        <small class="text-muted">{{ $order->table_number }}</small>
+                        <small class="text-muted">{{ $order->table_label }}</small>
                     </div>
                     <div class="col-md-3">
                         <small class="text-muted d-block">Mesero:</small>
@@ -746,6 +750,7 @@ $('#quickTableBoard .table-card').on('click', function() {
     $('#quickTableBoard .table-card').removeClass('selected');
     $(this).addClass('selected');
     $('#quickTable').val($(this).data('table-id'));
+    $('#quickTableLabel').text('Mesa seleccionada: ' + ($(this).data('table-name') || $(this).find('strong').text()));
 });
 
 $('#quickWaiter').on('change', function() {

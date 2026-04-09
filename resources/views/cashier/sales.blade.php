@@ -93,7 +93,7 @@
                     <tr>
                         <td><strong>#{{ $order->display_number }}</strong></td>
                         <td>{{ $order->completed_at->format('d/m/Y H:i') }}</td>
-                        <td>{{ $order->table_number }}</td>
+                        <td>{{ $order->table_label }}</td>
                         <td>{{ $order->user->name }}</td>
                         <td>{{ $order->cashier ? $order->cashier->name : '-' }}</td>
                         <td>{{ $order->payment_method === 'cash' ? 'Efectivo' : ($order->payment_method === 'mixed' ? 'Efectivo + QR' : 'QR') }}</td>

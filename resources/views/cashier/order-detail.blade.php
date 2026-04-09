@@ -120,7 +120,7 @@
                                 <select class="form-select form-select-sm" id="editTableSelect">
                                     @foreach($selectableTables as $table)
                                         <option value="{{ $table->id }}" {{ $order->table_id === $table->id ? 'selected' : '' }}>
-                                            {{ $table->name }}{{ !$table->active ? ' (cerrada)' : '' }}
+                                            {{ $table->merged_display_name }}{{ !$table->active ? ' (cerrada)' : '' }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -145,7 +145,7 @@
                                 </select>
                             </div>
                         @else
-                            <p><strong>Mesa:</strong> {{ $order->table_number }}</p>
+                            <p><strong>Mesa:</strong> {{ $order->table_label }}</p>
                             <p><strong>Mesero:</strong> {{ $order->user->name }}</p>
                         @endif
                     </div>

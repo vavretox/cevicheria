@@ -258,6 +258,34 @@
         display: none;
     }
 
+    .merge-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #dbeafe;
+        color: #1d4ed8;
+        font-size: 0.72rem;
+        font-weight: 700;
+    }
+
+    .merge-members {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+    }
+
+    .merge-chip {
+        border-radius: 999px;
+        padding: 3px 8px;
+        background: #e2e8f0;
+        color: #1e293b;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+
     @media (max-width: 991.98px) {
         .mobile-cart-spacer {
             display: block;
@@ -500,11 +528,11 @@
                             type="button"
                             class="table-card {{ $status }} {{ $selectable ? '' : 'is-disabled' }}"
                             data-table-id="{{ $table->id }}"
-                            data-table-name="{{ $table->name }}"
+                            data-table-name="{{ $table->merged_display_name }}"
                             data-selectable="{{ $selectable ? '1' : '0' }}"
                         >
                             <div class="d-flex justify-content-between align-items-start mb-2">
-                                <strong>{{ $table->name }}</strong>
+                                <strong>{{ $table->merged_display_name }}</strong>
                                 <span class="table-card-status">
                                     @if($status === 'available')
                                         Libre
@@ -517,12 +545,25 @@
                                     @endif
                                 </span>
                             </div>
+                            <div class="small text-muted mb-1">Capacidad total: {{ $table->combined_capacity ?: '-' }}</div>
                             @if($table->zone)
                                 <div class="small text-muted mb-1">{{ $table->zone }}</div>
+                            @endif
+                            @if($table->hasMergedChildren())
+                                <div class="mb-1">
+                                    <span class="merge-badge"><i class="fas fa-object-group"></i>Fusionada</span>
+                                </div>
+                                <div class="merge-members">
+                                    @foreach($table->merged_members as $member)
+                                        <span class="merge-chip">{{ $member->name }}</span>
+                                    @endforeach
+                                </div>
                             @endif
                             @if($table->isReserved())
                                 <div class="small text-muted">{{ $table->reservation_name }}</div>
                                 <div class="small text-muted">{{ $table->reservation_at?->format('d/m H:i') }}</div>
+                            @elseif($table->group_reservation_summary)
+                                <div class="small text-muted">{{ $table->group_reservation_summary }}</div>
                             @endif
                         </button>
                     @endforeach
@@ -1252,7 +1293,6 @@ function printKitchenTicket(isAuto = false) {
         shouldAutoPrintKitchen = false;
         if (isAuto) {
             showToast('info', 'Se abrió la impresión automática de cocina.');
-            scheduleKitchenModalAutoClose();
         }
     } catch (error) {
         if (isAuto) {

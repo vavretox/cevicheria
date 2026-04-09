@@ -85,7 +85,7 @@ class Order extends Model
 
     public function getTableLabelAttribute(): ?string
     {
-        return $this->diningTable?->name ?? $this->table_number;
+        return $this->diningTable?->merged_display_name ?? $this->table_number;
     }
 
     public function getServiceModeLabelAttribute(): string

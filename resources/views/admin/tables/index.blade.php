@@ -45,6 +45,34 @@
         font-size: 1.05rem;
         font-weight: 700;
     }
+
+    .table-merge-card {
+        border: 1px dashed #94a3b8;
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+        border-radius: 18px;
+    }
+
+    .merge-members {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+    }
+
+    .merge-chip {
+        border-radius: 999px;
+        padding: 4px 10px;
+        background: #e2e8f0;
+        color: #1e293b;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .merge-summary {
+        border-top: 1px dashed #cbd5e1;
+        margin-top: 10px;
+        padding-top: 10px;
+    }
 </style>
 @endsection
 
@@ -94,6 +122,48 @@
     </div>
 </div>
 
+<div class="card mb-4 table-merge-card">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <div>
+                <h5 class="mb-1"><i class="fas fa-object-group me-2"></i>Fusion de Mesas</h5>
+                <p class="text-muted mb-0">Prueba operativa: una mesa principal puede absorber mesas libres para atender grupos grandes y mostrarse como una sola unidad.</p>
+            </div>
+        </div>
+        <form action="{{ route('admin.tables.merge') }}" method="POST" class="row g-3 align-items-end mt-1">
+            @csrf
+            <div class="col-lg-4">
+                <label class="form-label">Mesa principal</label>
+                <select name="base_table_id" class="form-select" required>
+                    <option value="">Selecciona una mesa</option>
+                    @foreach($mergeableTables as $table)
+                        <option value="{{ $table->id }}">
+                            {{ $table->name }}{{ $table->zone ? ' - ' . $table->zone : '' }}
+                        </option>
+                    @endforeach
+                </select>
+                <small class="text-muted">Si ya tiene un pedido activo, esa mesa queda como la cabecera del grupo.</small>
+            </div>
+            <div class="col-lg-6">
+                <label class="form-label">Mesas a sumar</label>
+                <select name="merged_table_ids[]" class="form-select" multiple size="5" required>
+                    @foreach($mergeableTables as $table)
+                        <option value="{{ $table->id }}">
+                            {{ $table->name }} | Cap. {{ $table->capacity ?: '-' }}{{ $table->active_orders_count ? ' | Ocupada' : '' }}
+                        </option>
+                    @endforeach
+                </select>
+                <small class="text-muted">Para esta primera version, solo se agregan mesas sin pedido activo.</small>
+            </div>
+            <div class="col-lg-2 d-grid">
+                <button type="submit" class="btn btn-dark">
+                    <i class="fas fa-link me-2"></i>Fusionar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="card mb-4">
     <div class="card-header">
         <h5 class="mb-0"><i class="fas fa-chess-board me-2"></i>Tablero del Salon</h5>
@@ -103,7 +173,7 @@
             @forelse($tables as $table)
                 <div class="table-card {{ $table->ui_status }}">
                     <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div class="table-card-title">{{ $table->name }}</div>
+                        <div class="table-card-title">{{ $table->merged_display_name }}</div>
                         <span class="badge bg-light text-dark">
                             @if($table->ui_status === 'available')
                                 Libre
@@ -117,18 +187,28 @@
                         </span>
                     </div>
                     <div class="small text-muted mb-1">{{ $table->zone ?: 'Salon principal' }}</div>
-                    <div class="small text-muted mb-2">Capacidad: {{ $table->capacity ?: '-' }}</div>
+                    <div class="small text-muted mb-2">Capacidad total: {{ $table->combined_capacity ?: '-' }}</div>
+                    @if($table->hasMergedChildren())
+                        <div class="merge-members">
+                            @foreach($table->merged_members as $member)
+                                <span class="merge-chip">{{ $member->name }}</span>
+                            @endforeach
+                        </div>
+                    @endif
                     @if($table->isReserved())
                         <div class="small"><strong>Reserva:</strong> {{ $table->reservation_name }}</div>
                         <div class="small text-muted">{{ $table->reservation_at?->format('d/m/Y H:i') }}</div>
                     @endif
+                    @if($table->group_reservation_summary && !$table->isReserved())
+                        <div class="small text-muted mt-1"><strong>Reservas del grupo:</strong> {{ $table->group_reservation_summary }}</div>
+                    @endif
                     @if($table->reservation_notes)
                         <div class="small text-muted mt-1">{{ $table->reservation_notes }}</div>
                     @endif
-                    <div class="d-flex gap-2 mt-3">
+                    <div class="d-flex gap-2 mt-3 flex-wrap">
                         <button
                             class="btn btn-sm btn-outline-dark"
-                            onclick='showTableActivity({{ $table->id }}, @json($table->name))'
+                            onclick='showTableActivity({{ $table->id }}, @json($table->merged_display_name))'
                         >
                             <i class="fas fa-list"></i>
                         </button>
@@ -144,6 +224,14 @@
                         >
                             <i class="fas fa-calendar-check"></i>
                         </button>
+                        @if($table->hasMergedChildren())
+                            <form action="{{ route('admin.tables.unmerge', $table->id) }}" method="POST" class="d-inline">
+                                @csrf
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                    <i class="fas fa-unlink"></i>
+                                </button>
+                            </form>
+                        @endif
                     </div>
                 </div>
             @empty
@@ -170,9 +258,14 @@
                 <tbody>
                     @forelse($tables as $table)
                     <tr>
-                        <td><strong>{{ $table->name }}</strong></td>
+                        <td>
+                            <strong>{{ $table->merged_display_name }}</strong>
+                            @if($table->hasMergedChildren())
+                                <div class="small text-muted">Fusionada: {{ $table->merged_members->pluck('name')->join(', ') }}</div>
+                            @endif
+                        </td>
                         <td>{{ $table->zone ?: '-' }}</td>
-                        <td>{{ $table->capacity ?: '-' }}</td>
+                        <td>{{ $table->combined_capacity ?: '-' }}</td>
                         <td>
                             <span class="badge {{ $table->ui_status === 'available' ? 'bg-success' : ($table->ui_status === 'reserved' ? 'bg-warning text-dark' : ($table->ui_status === 'occupied' ? 'bg-primary' : 'bg-secondary')) }}">
                                 @if($table->ui_status === 'available')
@@ -197,7 +290,7 @@
                         <td class="text-end">
                             <button
                                 class="btn btn-sm btn-outline-dark"
-                                onclick='showTableActivity({{ $table->id }}, @json($table->name))'
+                                onclick='showTableActivity({{ $table->id }}, @json($table->merged_display_name))'
                                 title="Ver pedidos y movimientos"
                             >
                                 <i class="fas fa-list"></i>
@@ -214,6 +307,14 @@
                             >
                                 <i class="fas fa-calendar-check"></i>
                             </button>
+                            @if($table->hasMergedChildren())
+                            <form action="{{ route('admin.tables.unmerge', $table->id) }}" method="POST" class="d-inline">
+                                @csrf
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Separar mesas">
+                                    <i class="fas fa-unlink"></i>
+                                </button>
+                            </form>
+                            @endif
                             <form action="{{ route('admin.tables.delete', $table->id) }}" method="POST" class="d-inline">
                                 @csrf
                                 @method('DELETE')

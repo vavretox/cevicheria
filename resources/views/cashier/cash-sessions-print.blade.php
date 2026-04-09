@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Caja y Arqueo</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+        body { font-family: Cambria, Georgia, "Times New Roman", serif; margin: 24px; color: #111827; font-size: 13px; line-height: 1.35; }
         h1, h2 { margin: 0 0 8px; }
         .meta { margin-bottom: 20px; color: #4b5563; }
         .card { border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; margin-bottom: 20px; }

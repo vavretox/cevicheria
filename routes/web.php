@@ -42,8 +42,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/tables', [AdminController::class, 'tables'])->name('tables');
         Route::get('/tables/{id}/activity', [AdminController::class, 'tableActivity'])->name('tables.activity');
         Route::post('/tables', [AdminController::class, 'storeTable'])->name('tables.store');
+        Route::post('/tables/merge', [AdminController::class, 'mergeTables'])->name('tables.merge');
         Route::put('/tables/{id}', [AdminController::class, 'updateTable'])->name('tables.update');
         Route::put('/tables/{id}/reservation', [AdminController::class, 'updateTableReservation'])->name('tables.reservation');
+        Route::post('/tables/{id}/unmerge', [AdminController::class, 'unmergeTable'])->name('tables.unmerge');
         Route::delete('/tables/{id}', [AdminController::class, 'deleteTable'])->name('tables.delete');
         
         // Productos
@@ -78,6 +80,9 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['role:cajero,admin'])->prefix('cashier')->name('cashier.')->group(function () {
         Route::get('/dashboard', [CashierController::class, 'dashboard'])->name('dashboard');
         Route::get('/tables', [CashierController::class, 'tables'])->name('tables');
+        Route::post('/tables', [CashierController::class, 'storeTable'])->name('tables.store');
+        Route::post('/tables/merge', [CashierController::class, 'mergeTables'])->name('tables.merge');
+        Route::post('/tables/{id}/unmerge', [CashierController::class, 'unmergeTable'])->name('tables.unmerge');
         Route::get('/cash-sessions', [CashSessionController::class, 'cashierIndex'])->name('cash-sessions');
         Route::get('/cash-sessions/print', [CashSessionController::class, 'cashierPrint'])->name('cash-sessions.print');
         Route::post('/cash-sessions/open', [CashSessionController::class, 'open'])->name('cash-sessions.open');
@@ -94,6 +99,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/order/{id}/download', [CashierController::class, 'downloadReceipt'])->name('download-receipt');
         Route::get('/sales', [CashierController::class, 'sales'])->name('sales');
         Route::get('/stock', [CashierController::class, 'stock'])->name('stock');
+        Route::post('/stock/food', [CashierController::class, 'updateFoodStock'])->name('stock.food.update');
         Route::get('/sales/print', [CashierController::class, 'salesPrint'])->name('sales.print');
         Route::get('/manual', [ManualController::class, 'cashier'])->name('manual');
     });

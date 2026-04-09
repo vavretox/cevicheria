@@ -129,7 +129,7 @@ class WaiterController extends Controller
             'id' => $order->id,
             'display_number' => $order->display_number,
             'table_id' => $order->table_id,
-            'table_number' => $order->table_number,
+            'table_number' => $order->table_label,
             'service_mode' => $order->service_mode,
             'service_mode_label' => $order->service_mode_label,
             'status' => $order->status,
@@ -140,7 +140,7 @@ class WaiterController extends Controller
             'cashier' => $order->cashier ? $order->cashier->name : null,
             'available_tables' => $workflow->getSelectableTables($order)->map(fn ($table) => [
                 'id' => $table->id,
-                'name' => $table->name,
+                'name' => $table->merged_display_name,
             ])->values(),
             'details' => $order->details->map(function ($detail) {
                 return [
@@ -169,7 +169,10 @@ class WaiterController extends Controller
             ? $kitchenPrint->buildAddedPrintPayload($order)
             : $kitchenPrint->buildMainPrintPayload($order);
 
-        return view('waiter.print-order', array_merge(['order' => $order], $payload));
+        return view('waiter.print-order', array_merge([
+            'order' => $order,
+            'autoCloseAfterPrint' => false,
+        ], $payload));
     }
 
     public function updateOrderItems(Request $request, $id, OrderWorkflowService $workflow)

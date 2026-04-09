@@ -6,50 +6,52 @@
     <title>{{ $printLabel }} #{{ $printReference ?? $order->display_number }}</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
             margin: 0;
-            padding: 16px;
+            padding: 10px 12px;
             color: #111;
             background: #fff;
+            font-size: 12px;
+            line-height: 1.2;
         }
 
         .ticket {
-            max-width: 340px;
+            max-width: 300px;
             margin: 0 auto;
         }
 
         .header {
             text-align: center;
             border-bottom: 2px dashed #000;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
+            padding-bottom: 6px;
+            margin-bottom: 6px;
         }
 
         .header h1 {
-            font-size: 20px;
-            margin: 0 0 4px;
+            font-size: 16px;
+            margin: 0 0 2px;
         }
 
         .meta {
-            font-size: 13px;
-            line-height: 1.5;
-            margin-bottom: 12px;
+            font-size: 11px;
+            line-height: 1.25;
+            margin-bottom: 6px;
         }
 
         .meta-row {
             display: flex;
             justify-content: space-between;
-            gap: 12px;
+            gap: 8px;
         }
 
         .items {
             border-top: 1px dashed #000;
             border-bottom: 1px dashed #000;
-            padding: 10px 0;
+            padding: 6px 0;
         }
 
         .item {
-            margin-bottom: 10px;
+            margin-bottom: 6px;
         }
 
         .item:last-child {
@@ -59,27 +61,27 @@
         .item-line {
             display: flex;
             justify-content: space-between;
-            gap: 10px;
-            font-size: 15px;
+            gap: 8px;
+            font-size: 13px;
             font-weight: bold;
         }
 
         .notes {
-            margin-top: 3px;
-            font-size: 12px;
-            padding-left: 8px;
+            margin-top: 2px;
+            font-size: 11px;
+            padding-left: 6px;
         }
 
         .empty {
             text-align: center;
-            font-size: 13px;
-            padding: 14px 0;
+            font-size: 12px;
+            padding: 10px 0;
         }
 
         .footer {
-            margin-top: 12px;
+            margin-top: 8px;
             text-align: center;
-            font-size: 12px;
+            font-size: 11px;
         }
 
         .no-print {
@@ -132,7 +134,7 @@
         <div class="meta">
             <div class="meta-row">
                 <span><strong>Pedido:</strong> #{{ $printReference ?? $order->display_number }}</span>
-                <span><strong>Mesa:</strong> {{ $order->table_number }}</span>
+                <span><strong>Mesa:</strong> {{ $order->table_label }}</span>
             </div>
             <div class="meta-row">
                 <span><strong>Mesero:</strong> {{ $order->user->name }}</span>
@@ -197,6 +199,7 @@
     </div>
     <script>
         const waiterDashboardUrl = @json(route('waiter.dashboard'));
+        const autoCloseAfterPrint = @json($autoCloseAfterPrint ?? false);
         let hasHandledPrintReturn = false;
 
         function returnToWaiterDashboard() {
@@ -225,7 +228,9 @@
             window.print();
         });
 
-        window.addEventListener('afterprint', returnToWaiterDashboard);
+        if (autoCloseAfterPrint) {
+            window.addEventListener('afterprint', returnToWaiterDashboard);
+        }
     </script>
 </body>
 </html>

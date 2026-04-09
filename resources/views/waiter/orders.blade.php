@@ -80,7 +80,7 @@
                                 {{ $order->service_mode_label }}
                             </span>
                         </td>
-                        <td>{{ $order->table_number }}</td>
+                        <td>{{ $order->table_label }}</td>
                         <td>{{ $order->created_at->format('d/m/Y H:i') }}</td>
                         <td><strong class="text-success">Bs. {{ number_format($order->total, 2) }}</strong></td>
                         <td>
@@ -179,7 +179,7 @@
                     </div>
 
                     <div class="small mt-3">
-                        <div><strong>Mesa:</strong> {{ $order->table_number }}</div>
+                        <div><strong>Mesa:</strong> {{ $order->table_label }}</div>
                         <div><strong>Procesado por:</strong> {{ $order->cashier?->name ?? '-' }}</div>
                     </div>
 
@@ -862,9 +862,6 @@ function printOrderTicket(isAuto = false) {
         orderPrintFrame.contentWindow.focus();
         orderPrintFrame.contentWindow.print();
         shouldAutoPrintOrder = false;
-        if (isAuto) {
-            scheduleOrderPrintModalAutoClose();
-        }
     } catch (error) {
         if (isAuto) {
             alert('No se pudo imprimir automáticamente. Usa "Imprimir ahora".');

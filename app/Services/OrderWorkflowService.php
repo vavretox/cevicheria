@@ -18,12 +18,15 @@ class OrderWorkflowService
         $currentTableId = $currentOrder?->table_id;
         $currentOrderId = $currentOrder?->id;
 
-        $query = DiningTable::query();
+        $query = DiningTable::query()
+            ->roots()
+            ->with('mergedChildren:id,name,capacity,merged_into_table_id,reservation_name,reservation_at');
 
         if ($currentTableId) {
             $query->where('id', $currentTableId)
                 ->orWhere(function ($availableQuery) use ($currentOrderId) {
-                    $availableQuery->where('active', true)
+                    $availableQuery->roots()
+                        ->where('active', true)
                         ->whereDoesntHave('activeOrders', function ($orderQuery) use ($currentOrderId) {
                             if ($currentOrderId) {
                                 $orderQuery->where('orders.id', '!=', $currentOrderId);
@@ -37,16 +40,18 @@ class OrderWorkflowService
 
         return $query
             ->orderBy('name')
-            ->get(['id', 'name', 'active', 'reservation_name', 'reservation_at', 'zone']);
+            ->get(['id', 'name', 'active', 'reservation_name', 'reservation_at', 'zone', 'capacity', 'merged_into_table_id']);
     }
 
     public function getTableBoard(): Collection
     {
         return DiningTable::query()
+            ->roots()
             ->withCount('activeOrders')
+            ->with('mergedChildren:id,name,capacity,merged_into_table_id,reservation_name,reservation_at,active')
             ->orderByRaw('COALESCE(zone, "")')
             ->orderBy('name')
-            ->get(['id', 'name', 'zone', 'active', 'reservation_name', 'reservation_at']);
+            ->get(['id', 'name', 'zone', 'active', 'reservation_name', 'reservation_at', 'capacity', 'merged_into_table_id']);
     }
 
     public function createOrder(User $waiter, Collection $items, ?int $tableId, int $auditUserId, bool $useCustomPrice = false): Order
@@ -60,7 +65,7 @@ class OrderWorkflowService
             $order = Order::create([
                 'user_id' => $waiter->id,
                 'table_id' => $table?->id,
-                'table_number' => $table?->name ?? 'Delivery',
+                'table_number' => $table?->merged_display_name ?? 'Delivery',
                 'service_mode' => $this->inferServiceMode($resolvedItems),
                 'subtotal' => 0,
                 'total' => 0,
@@ -114,7 +119,7 @@ class OrderWorkflowService
 
             $order->user_id = $waiter->id;
             $order->table_id = $table?->id;
-            $order->table_number = $table?->name ?? 'Delivery';
+            $order->table_number = $table?->merged_display_name ?? 'Delivery';
             $order->service_mode = $this->inferServiceMode($resolvedItems);
             $order->save();
 

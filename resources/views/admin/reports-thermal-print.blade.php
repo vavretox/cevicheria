@@ -17,13 +17,14 @@
         }
 
         body {
-            font-family: "Courier New", monospace;
+            font-family: Cambria, Georgia, "Times New Roman", serif;
             width: 80mm;
             margin: 0 auto;
             padding: 10px 8px 24px;
             color: #111827;
             background: #ffffff;
-            font-size: 12px;
+            font-size: 13px;
+            line-height: 1.35;
         }
 
         .center {
@@ -61,7 +62,7 @@
         thead th {
             border-top: 1px solid #111827;
             border-bottom: 1px solid #111827;
-            font-size: 11px;
+            font-size: 12px;
         }
 
         tbody tr + tr td {
@@ -97,7 +98,7 @@
         .footer {
             margin-top: 12px;
             text-align: center;
-            font-size: 11px;
+            font-size: 12px;
         }
     </style>
 </head>
@@ -110,6 +111,7 @@
     <div class="meta">
         <p><strong>Desde:</strong> {{ $dateFrom ?: 'Todas' }}</p>
         <p><strong>Hasta:</strong> {{ $dateTo ?: 'Todas' }}</p>
+        <p><strong>Categoría:</strong> {{ $categoryLabel }}</p>
         <p><strong>Generado:</strong> {{ now()->format('d/m/Y H:i') }}</p>
         <p><strong>Ventas:</strong> {{ $ordersCount }}</p>
     </div>
@@ -144,7 +146,7 @@
     </div>
 
     <div class="footer">
-        <div>Resumen por producto</div>
+        <div>Resumen por producto{{ $categoryLabel !== 'Todas' ? ' - ' . $categoryLabel : '' }}</div>
         <div>Impresión térmica</div>
     </div>
 

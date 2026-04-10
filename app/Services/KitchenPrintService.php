@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\Order;
+use App\Models\OrderAudit;
 use App\Models\Product;
 use Illuminate\Support\Collection;
 
@@ -30,83 +31,116 @@ class KitchenPrintService
         ];
     }
 
-    public function buildAddedPrintPayload(Order $order): array
+    public function buildAddedPrintPayload(Order $order, ?string $actorRole = null): array
+    {
+        return $this->buildScopedAddedPrintPayload($order, $actorRole);
+    }
+
+    public function buildCashierAddedPrintPayload(Order $order): array
+    {
+        return $this->buildScopedAddedPrintPayload($order, 'cajero');
+    }
+
+    public function hasPrintableAddedItems(Order $order, ?string $actorRole = null): bool
     {
         $products = Product::with('category')->get()->keyBy('id');
-        [$foodItems, $printedAt] = $this->buildLatestAddedItems($order, $products);
+        [$foodItems] = $this->buildPendingAddedItems($order, $products, $actorRole);
+
+        return $foodItems->isNotEmpty();
+    }
+
+    public function markAddedItemsPrinted(Order $order, int $userId, string $actorRole, Collection $foodItems): void
+    {
+        if ($foodItems->isEmpty()) {
+            return;
+        }
+
+        OrderAudit::create([
+            'order_id' => $order->id,
+            'user_id' => $userId,
+            'action' => 'kitchen_added_printed',
+            'meta' => [
+                'actor_role' => $actorRole,
+                'items' => $foodItems->map(function ($item) {
+                    return [
+                        'product_id' => (int) ($item->product?->id ?? 0),
+                        'quantity' => (int) ($item->quantity ?? 0),
+                        'notes' => $item->notes ?? null,
+                        'service_type' => $item->service_type ?? 'dine_in',
+                    ];
+                })->values()->all(),
+            ],
+            'created_at' => now(),
+        ]);
+    }
+
+    private function buildScopedAddedPrintPayload(Order $order, ?string $actorRole = null): array
+    {
+        $products = Product::with('category')->get()->keyBy('id');
+        [$foodItems, $printedAt] = $this->buildPendingAddedItems($order, $products, $actorRole);
+        $referenceSuffix = $this->addedPrintReferenceSuffix($actorRole);
 
         return [
             'foodItems' => $foodItems,
             'printLabel' => 'ULTIMOS AGREGADOS',
             'printedAt' => $printedAt,
             'scope' => 'added',
-            'printReference' => $order->display_number . '-' . $this->latestAddedSequence($order),
+            'printReference' => $order->display_number . $referenceSuffix . $this->printedAddedSequence($order, $actorRole),
         ];
     }
 
-    public function hasPrintableAddedItems(Order $order): bool
+    private function buildPendingAddedItems(Order $order, Collection $products, ?string $actorRole = null): array
     {
-        $latestUpdate = $order->audits
-            ->where('action', 'updated')
-            ->sortByDesc('created_at')
-            ->first();
+        $updatedAudits = $this->updatedAuditsByRole($order, $actorRole);
+        $lastPrintedAudit = $this->latestPrintedAddedAudit($order, $actorRole);
 
-        if (!$latestUpdate) {
-            return false;
+        if ($lastPrintedAudit) {
+            $updatedAudits = $updatedAudits
+                ->filter(fn ($audit) => $audit->created_at->gt($lastPrintedAudit->created_at))
+                ->values();
         }
 
-        $before = $this->groupAuditItemsBySignature($latestUpdate['meta']['before']['items'] ?? []);
-        $after = $this->groupAuditItemsBySignature($latestUpdate['meta']['after']['items'] ?? []);
-        $foodProductIds = $this->foodProductIds();
-
-        foreach ($after as $signature => $item) {
-            if (!in_array((int) ($item['product_id'] ?? 0), $foodProductIds, true)) {
-                continue;
-            }
-
-            $afterQty = (int) ($item['quantity'] ?? 0);
-            $beforeQty = (int) ($before->get($signature)['quantity'] ?? 0);
-
-            if ($afterQty - $beforeQty > 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function buildLatestAddedItems(Order $order, Collection $products): array
-    {
-        $latestUpdate = $order->audits
-            ->where('action', 'updated')
-            ->sortByDesc('created_at')
-            ->first();
-
-        if (!$latestUpdate) {
+        if ($updatedAudits->isEmpty()) {
             return [collect(), $order->updated_at ?? $order->created_at];
         }
 
-        $before = $this->groupAuditItemsBySignature($latestUpdate['meta']['before']['items'] ?? []);
-        $after = $this->groupAuditItemsBySignature($latestUpdate['meta']['after']['items'] ?? []);
+        $aggregatedItems = collect();
+        $printedAt = $updatedAudits->last()->created_at;
 
-        $addedItems = $after->map(function ($item, $signature) use ($before) {
-            $afterQty = (int) ($item['quantity'] ?? 0);
-            $beforeQty = (int) ($before->get($signature)['quantity'] ?? 0);
-            $delta = $afterQty - $beforeQty;
+        foreach ($updatedAudits as $audit) {
+            $before = $this->groupAuditItemsBySignature($audit['meta']['before']['items'] ?? []);
+            $after = $this->groupAuditItemsBySignature($audit['meta']['after']['items'] ?? []);
+            $signatures = $before->keys()->merge($after->keys())->unique()->values();
 
-            if ($delta <= 0) {
-                return null;
+            foreach ($signatures as $signature) {
+                $beforeItem = $before->get($signature);
+                $afterItem = $after->get($signature);
+                $delta = (int) ($afterItem['quantity'] ?? 0) - (int) ($beforeItem['quantity'] ?? 0);
+
+                if ($delta === 0) {
+                    continue;
+                }
+
+                $sourceItem = $afterItem ?? $beforeItem;
+                $currentItem = $aggregatedItems->get($signature, [
+                    'product_id' => (int) ($sourceItem['product_id'] ?? 0),
+                    'quantity' => 0,
+                    'notes' => $sourceItem['notes'] ?? null,
+                    'service_type' => $sourceItem['service_type'] ?? 'dine_in',
+                ]);
+
+                $currentItem['quantity'] += $delta;
+
+                if ($currentItem['quantity'] <= 0) {
+                    $aggregatedItems->forget($signature);
+                    continue;
+                }
+
+                $aggregatedItems->put($signature, $currentItem);
             }
+        }
 
-            return [
-                'product_id' => (int) ($item['product_id'] ?? 0),
-                'quantity' => $delta,
-                'notes' => $item['notes'] ?? null,
-                'service_type' => $item['service_type'] ?? 'dine_in',
-            ];
-        })->values();
-
-        return [$this->mapFoodItems($addedItems, $products), $latestUpdate->created_at];
+        return [$this->mapFoodItems($aggregatedItems->values(), $products), $printedAt];
     }
 
     private function mapFoodItems(Collection $items, Collection $products): Collection
@@ -151,31 +185,66 @@ class KitchenPrintService
             });
     }
 
-    private function latestAddedSequence(Order $order): int
+    private function printedAddedSequence(Order $order, ?string $actorRole = null): int
     {
-        $sequence = 0;
-        $foodProductIds = $this->foodProductIds();
+        $order->loadMissing('audits.user');
 
-        foreach ($order->audits->where('action', 'updated')->sortBy('created_at') as $audit) {
-            $before = $this->groupAuditItemsBySignature($audit['meta']['before']['items'] ?? []);
-            $after = $this->groupAuditItemsBySignature($audit['meta']['after']['items'] ?? []);
+        $printedCount = $order->audits
+            ->filter(function ($audit) use ($actorRole) {
+                return $audit->action === 'kitchen_added_printed'
+                    && $this->auditMatchesRole($audit, $actorRole);
+            })
+            ->count();
 
-            foreach ($after as $signature => $item) {
-                if (!in_array((int) ($item['product_id'] ?? 0), $foodProductIds, true)) {
-                    continue;
-                }
+        return $printedCount + 1;
+    }
 
-                $afterQty = (int) ($item['quantity'] ?? 0);
-                $beforeQty = (int) ($before->get($signature)['quantity'] ?? 0);
+    private function latestPrintedAddedAudit(Order $order, ?string $actorRole = null): ?OrderAudit
+    {
+        $order->loadMissing('audits.user');
 
-                if ($afterQty - $beforeQty > 0) {
-                    $sequence++;
-                    break;
-                }
-            }
+        return $order->audits
+            ->filter(function ($audit) use ($actorRole) {
+                return $audit->action === 'kitchen_added_printed'
+                    && $this->auditMatchesRole($audit, $actorRole);
+            })
+            ->sortByDesc('created_at')
+            ->first();
+    }
+
+    private function updatedAuditsByRole(Order $order, ?string $actorRole = null): Collection
+    {
+        $order->loadMissing('audits.user');
+
+        return $order->audits
+            ->filter(function ($audit) use ($actorRole) {
+                return $audit->action === 'updated'
+                    && $this->auditMatchesRole($audit, $actorRole);
+            })
+            ->sortBy('created_at')
+            ->values();
+    }
+
+    private function auditMatchesRole(OrderAudit $audit, ?string $actorRole = null): bool
+    {
+        if ($actorRole === null) {
+            return true;
         }
 
-        return max(1, $sequence);
+        $metaRole = mb_strtolower((string) data_get($audit->meta, 'actor_role', ''));
+        $userRole = mb_strtolower((string) ($audit->user?->role ?? ''));
+        $normalizedRole = mb_strtolower($actorRole);
+
+        return $metaRole === $normalizedRole || $userRole === $normalizedRole;
+    }
+
+    private function addedPrintReferenceSuffix(?string $actorRole = null): string
+    {
+        return match (mb_strtolower((string) $actorRole)) {
+            'cajero' => '-C',
+            'mesero' => '-M',
+            default => '-',
+        };
     }
 
     private function foodProductIds(): array

@@ -26,6 +26,10 @@ class Product extends Model
         'unlimited_stock' => 'boolean',
     ];
 
+    protected $appends = [
+        'image_url',
+    ];
+
     public function category()
     {
         return $this->belongsTo(Category::class);

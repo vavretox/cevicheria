@@ -100,7 +100,7 @@
         ->sortBy('name')
         ->values();
 
-    $foodCategoryCodes = ['ceviches', 'platos_de_fondo'];
+    $foodCategoryCodes = ['ceviches', 'entradas', 'platos_de_fondo'];
 @endphp
 
 <div class="mb-4">
@@ -146,10 +146,15 @@
         <span class="badge bg-dark">{{ $group->count }} productos</span>
     </div>
     <div class="card-body">
-        @if(in_array(optional($group->products->first()?->category)->code, $foodCategoryCodes, true))
+        @php
+            $groupCategory = optional($group->products->first()?->category);
+            $groupCategoryCode = $groupCategory->code;
+            $groupCategoryName = \Illuminate\Support\Str::lower(trim((string) ($groupCategory->name ?? '')));
+        @endphp
+        @if(in_array($groupCategoryCode, $foodCategoryCodes, true) || $groupCategoryName === 'entradas')
         <div class="daily-stock-card p-3 mb-4">
             <div class="fw-semibold mb-1"><i class="fas fa-calendar-day me-2"></i>Registrar stock del día</div>
-            <div class="small text-muted mb-3">El cajero puede cargar o corregir el stock diario de productos alimenticios desde aquí.</div>
+            <div class="small text-muted mb-3">El cajero puede cargar o corregir el stock diario de ceviches, entradas y platos de fondo desde aquí.</div>
             <form action="{{ route('cashier.stock.food.update') }}" method="POST" class="row g-3 align-items-end">
                 @csrf
                 <div class="col-lg-4">
@@ -234,7 +239,7 @@
     <div class="stock-category-header d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div>
             <h5 class="mb-1">Historial diario de cambios</h5>
-            <p class="text-muted mb-0">Últimos registros de stock diario para ceviches y platos de fondo.</p>
+            <p class="text-muted mb-0">Últimos registros de stock diario para ceviches, entradas y platos de fondo.</p>
         </div>
         <span class="badge bg-dark">{{ $foodStockHistories->count() }} cambios</span>
     </div>

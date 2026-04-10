@@ -81,7 +81,7 @@ class WaiterController extends Controller
         $baseQuery = Order::where('user_id', Auth::id());
 
         $ordersQuery = (clone $baseQuery)
-            ->with(['details.product', 'cashier', 'diningTable', 'audits'])
+            ->with(['details.product', 'cashier', 'diningTable', 'audits.user'])
             ->latest();
 
         if ($currentView === 'completed') {
@@ -95,7 +95,7 @@ class WaiterController extends Controller
         $orders = $ordersQuery->paginate(20)->withQueryString();
 
         $orders->getCollection()->transform(function (Order $order) use ($kitchenPrint) {
-            $order->can_print_added = $order->status === 'pending' && $kitchenPrint->hasPrintableAddedItems($order);
+            $order->can_print_added = $order->status === 'pending' && $kitchenPrint->hasPrintableAddedItems($order, 'mesero');
             return $order;
         });
 
@@ -114,7 +114,7 @@ class WaiterController extends Controller
         $products = Product::where('active', true)
             ->with('category')
             ->orderBy('name')
-            ->get(['id', 'name', 'price', 'stock', 'category_id']);
+            ->get(['id', 'name', 'price', 'stock', 'category_id', 'image']);
 
         return view('waiter.orders', compact('orders', 'products', 'currentView', 'pendingCount', 'completedCount', 'cancelledCount'));
     }
@@ -161,13 +161,17 @@ class WaiterController extends Controller
     public function printOrder(KitchenPrintService $kitchenPrint, $id, $scope = 'main')
     {
         $order = Order::where('user_id', Auth::id())
-            ->with(['user', 'details.product.category', 'audits'])
+            ->with(['user', 'details.product.category', 'audits.user'])
             ->findOrFail($id);
 
         $scope = $scope === 'added' ? 'added' : 'main';
         $payload = $scope === 'added'
-            ? $kitchenPrint->buildAddedPrintPayload($order)
+            ? $kitchenPrint->buildAddedPrintPayload($order, 'mesero')
             : $kitchenPrint->buildMainPrintPayload($order);
+
+        if ($scope === 'added') {
+            $kitchenPrint->markAddedItemsPrinted($order, Auth::id(), 'mesero', $payload['foodItems']);
+        }
 
         return view('waiter.print-order', array_merge([
             'order' => $order,

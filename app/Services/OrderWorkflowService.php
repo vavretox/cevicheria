@@ -38,20 +38,20 @@ class OrderWorkflowService
                 ->whereDoesntHave('activeOrders');
         }
 
-        return $query
-            ->orderBy('name')
-            ->get(['id', 'name', 'active', 'reservation_name', 'reservation_at', 'zone', 'capacity', 'merged_into_table_id']);
+        return DiningTable::sortCollectionByName(
+            $query->get(['id', 'name', 'active', 'reservation_name', 'reservation_at', 'zone', 'capacity', 'merged_into_table_id'])
+        );
     }
 
     public function getTableBoard(): Collection
     {
-        return DiningTable::query()
+        return DiningTable::sortCollectionByZoneAndName(
+            DiningTable::query()
             ->roots()
             ->withCount('activeOrders')
             ->with('mergedChildren:id,name,capacity,merged_into_table_id,reservation_name,reservation_at,active')
-            ->orderByRaw('COALESCE(zone, "")')
-            ->orderBy('name')
-            ->get(['id', 'name', 'zone', 'active', 'reservation_name', 'reservation_at', 'capacity', 'merged_into_table_id']);
+            ->get(['id', 'name', 'zone', 'active', 'reservation_name', 'reservation_at', 'capacity', 'merged_into_table_id'])
+        );
     }
 
     public function createOrder(User $waiter, Collection $items, ?int $tableId, int $auditUserId, bool $useCustomPrice = false): Order

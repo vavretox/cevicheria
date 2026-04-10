@@ -100,7 +100,7 @@
                         <td><strong class="text-success">Bs. {{ number_format($order->total, 2) }}</strong></td>
                         <td>
                             <a href="{{ route('cashier.print-receipt', $order->id) }}" 
-                               class="btn btn-sm btn-primary" target="_blank">
+                               class="btn btn-sm btn-primary">
                                 <i class="fas fa-print"></i>
                             </a>
                             <form action="{{ route('cashier.revert-order', $order->id) }}" method="POST" class="d-inline revert-form">

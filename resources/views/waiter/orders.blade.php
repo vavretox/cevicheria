@@ -342,6 +342,8 @@
 @section('scripts')
 <script>
 const productsCatalog = @json($products);
+@include('orders._editor-utils')
+const orderEditorUtils = window.orderEditorUtils;
 let currentOrder = null;
 let currentItems = [];
 let pendingFoodProduct = null;
@@ -353,7 +355,7 @@ let orderPrintLoadTimeoutId = null;
 let shouldAutoPrintOrder = false;
 
 function createCurrentItemKey(productId, notes = '', serviceType = 'dine_in') {
-    return `${productId}::${String(notes || '').trim().toLowerCase()}::${serviceType}`;
+    return orderEditorUtils.buildItemSignature(productId, notes, serviceType);
 }
 
 function getProductStock(product) {
@@ -540,6 +542,19 @@ function renderOrderDetails() {
             renderOrderDetails();
         });
 
+        $('#orderDetailsContent .qty-input').off('change').on('change', function() {
+            const container = $(this).closest('[data-item-key]');
+            const itemKey = String(container.data('item-key'));
+            const item = currentItems.find(i => i.item_key === itemKey);
+            if (!item) {
+                return;
+            }
+
+            const qty = parseInt($(this).val(), 10);
+            item.quantity = isNaN(qty) ? 0 : Math.max(0, qty);
+            renderOrderDetails();
+        });
+
         $('#addProductBtn').off('click').on('click', function() {
             const productId = parseInt($('#addProductSelect').val(), 10);
             const qty = parseInt($('#addProductQty').val(), 10);
@@ -589,7 +604,7 @@ function renderOrderDetails() {
                 quantity: qty,
                 notes: '',
                 service_type: 'dine_in',
-                service_type_label: 'En mesa'
+                service_type_label: orderEditorUtils.getServiceTypeLabel('dine_in')
             });
 
             renderOrderDetails();
@@ -651,27 +666,12 @@ function renderOrderDetails() {
 }
 
 function isFoodProduct(product) {
-    if (!product) {
-        return false;
-    }
-
-    const categoryCode = String(product.category?.code || '').trim().toLowerCase();
-    return categoryCode !== 'bebidas';
+    return orderEditorUtils.isFoodProduct(product);
 }
 
 function addOrUpdateCurrentItem(newItem) {
-    const serviceType = newItem.service_type || 'dine_in';
-    const itemKey = createCurrentItemKey(newItem.product_id, newItem.notes, serviceType);
-    const existing = currentItems.find(i => i.item_key === itemKey);
-
-    if (existing) {
-        existing.quantity += newItem.quantity;
-        return;
-    }
-
-    currentItems.push({
-        ...newItem,
-        item_key: itemKey,
+    orderEditorUtils.mergeOrderItem(currentItems, newItem, {
+        createItemKey: (item) => createCurrentItemKey(item.product_id, item.notes, item.service_type),
     });
 }
 
@@ -684,20 +684,15 @@ function resetFoodNotesModal() {
 }
 
 function getSelectedFoodNotes() {
-    return $('.food-note-input:checked').map(function() {
-        return this.value;
-    }).get().join(', ');
+    return orderEditorUtils.getCheckedValues('.food-note-input');
 }
 
 function getSelectedFoodServiceType() {
-    return $('#foodServiceType').val() || 'dine_in';
+    return orderEditorUtils.normalizeServiceType($('#foodServiceType').val());
 }
 
 function syncFoodNoteStyles() {
-    $('.food-note-option').each(function() {
-        const input = $(this).find('.food-note-input');
-        $(this).toggleClass('border-success bg-success-subtle', input.is(':checked'));
-    });
+    orderEditorUtils.syncToggleCardState('.food-note-option', '.food-note-input');
 }
 
 $('#foodNotesModal').on('hidden.bs.modal', function() {
@@ -747,7 +742,7 @@ $('#confirmFoodNotes').on('click', function() {
         quantity: pendingFoodProduct.quantity,
         notes: getSelectedFoodNotes(),
         service_type: getSelectedFoodServiceType(),
-        service_type_label: getSelectedFoodServiceType() === 'takeaway' ? 'Para llevar' : 'En mesa'
+        service_type_label: orderEditorUtils.getServiceTypeLabel(getSelectedFoodServiceType())
     });
 
     foodNotesModal.hide();
@@ -777,7 +772,7 @@ function viewOrderDetails(orderId) {
             quantity: d.quantity,
             notes: d.notes || '',
             service_type: d.service_type || 'dine_in',
-            service_type_label: d.service_type_label || (d.service_type === 'takeaway' ? 'Para llevar' : 'En mesa')
+            service_type_label: d.service_type_label || orderEditorUtils.getServiceTypeLabel(d.service_type)
         }));
         renderOrderDetails();
     }).fail(function() {

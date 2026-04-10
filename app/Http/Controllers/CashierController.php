@@ -56,8 +56,9 @@ class CashierController extends Controller
             });
 
         $products = Product::where('active', true)
+            ->with('category')
             ->orderBy('name')
-            ->get(['id', 'name', 'price', 'stock']);
+            ->get();
         $availableTables = $workflow->getSelectableTables();
         $tableBoard = $workflow->getTableBoard();
         $waiters = User::where('role', 'mesero')
@@ -94,13 +95,17 @@ class CashierController extends Controller
 
         $foodCategoryCodes = [
             Category::CODE_CEVICHES,
+            Category::CODE_ENTRADAS,
             Category::CODE_MAIN_DISHES,
         ];
 
         $foodStockHistories = ProductStockHistory::query()
             ->with(['product.category', 'user'])
             ->whereHas('product.category', function ($query) use ($foodCategoryCodes) {
-                $query->whereIn('code', $foodCategoryCodes);
+                $query->where(function ($categoryQuery) use ($foodCategoryCodes) {
+                    $categoryQuery->whereIn('code', $foodCategoryCodes)
+                        ->orWhereRaw('LOWER(name) = ?', ['entradas']);
+                });
             })
             ->latest('stock_date')
             ->latest('id')
@@ -125,10 +130,15 @@ class CashierController extends Controller
 
         if (!in_array($product->category?->code, [
             Category::CODE_CEVICHES,
+            Category::CODE_ENTRADAS,
             Category::CODE_MAIN_DISHES,
         ], true)) {
-            return redirect()->route('cashier.stock')
-                ->with('error', 'Solo puedes registrar stock diario para productos alimenticios.');
+            $categoryName = mb_strtolower(trim((string) ($product->category?->name ?? '')));
+
+            if ($categoryName !== 'entradas') {
+                return redirect()->route('cashier.stock')
+                    ->with('error', 'Solo puedes registrar stock diario para productos alimenticios.');
+            }
         }
 
         $newStock = (int) $request->input('stock');
@@ -177,9 +187,9 @@ class CashierController extends Controller
         $mergeableTables = DiningTable::query()
             ->roots()
             ->withCount('activeOrders')
-            ->orderByRaw('COALESCE(zone, "")')
-            ->orderBy('name')
             ->get(['id', 'name', 'zone', 'capacity', 'active', 'merged_into_table_id']);
+
+        $mergeableTables = DiningTable::sortCollectionByZoneAndName($mergeableTables);
 
         return view('cashier.tables', compact('tableBoard', 'mergeableTables'));
     }
@@ -299,14 +309,15 @@ class CashierController extends Controller
             ->with('success', 'La fusión de mesas se deshizo desde caja.');
     }
 
-    public function showOrder($id, OrderWorkflowService $workflow)
+    public function showOrder($id, OrderWorkflowService $workflow, KitchenPrintService $kitchenPrint)
     {
         $order = Order::with(['user', 'details.product', 'audits.user', 'diningTable'])
             ->findOrFail($id);
 
         $products = Product::where('active', true)
+            ->with('category')
             ->orderBy('name')
-            ->get(['id', 'name', 'price', 'stock']);
+            ->get();
         $waiters = User::where('role', 'mesero')
             ->where('active', true)
             ->orderBy('name')
@@ -316,8 +327,9 @@ class CashierController extends Controller
         $audits = $order->audits()->with('user')->latest()->take(50)->get();
         $productNameMap = $this->buildAuditProductNameMap($order, $audits);
         $auditEntries = $audits->map(fn (OrderAudit $audit) => $this->formatAuditEntry($audit, $productNameMap))->values();
+        $canPrintAdded = $order->status === 'pending' && $kitchenPrint->hasPrintableAddedItems($order, 'cajero');
 
-        return view('cashier.order-detail', compact('order', 'products', 'waiters', 'audits', 'auditEntries', 'selectableTables'));
+        return view('cashier.order-detail', compact('order', 'products', 'waiters', 'audits', 'auditEntries', 'selectableTables', 'canPrintAdded'));
     }
 
     public function orderSummary($id)
@@ -533,16 +545,26 @@ class CashierController extends Controller
         }
     }
 
-    public function printKitchenOrder($id, KitchenPrintService $kitchenPrint)
+    public function printKitchenOrder($id, KitchenPrintService $kitchenPrint, $scope = 'main')
     {
-        $order = Order::with(['user', 'details.product.category'])
+        $order = Order::with(['user', 'details.product.category', 'audits.user'])
             ->findOrFail($id);
+
+        $scope = $scope === 'added' ? 'added' : 'main';
+        $payload = $scope === 'added'
+            ? $kitchenPrint->buildCashierAddedPrintPayload($order)
+            : $kitchenPrint->buildMainPrintPayload($order);
+
+        if ($scope === 'added') {
+            $kitchenPrint->markAddedItemsPrinted($order, Auth::id(), 'cajero', $payload['foodItems']);
+        }
+
         return view('waiter.print-order', array_merge(
             [
                 'order' => $order,
                 'autoCloseAfterPrint' => true,
             ],
-            $kitchenPrint->buildMainPrintPayload($order)
+            $payload
         ));
     }
 
@@ -845,18 +867,18 @@ class CashierController extends Controller
                 ->whereDoesntHave('activeOrders');
         }
 
-        return $query
-            ->orderBy('name')
-            ->get(['id', 'name', 'active', 'reservation_name', 'reservation_at', 'zone']);
+        return DiningTable::sortCollectionByName(
+            $query->get(['id', 'name', 'active', 'reservation_name', 'reservation_at', 'zone'])
+        );
     }
 
     private function getTableBoard()
     {
-        return DiningTable::query()
+        return DiningTable::sortCollectionByZoneAndName(
+            DiningTable::query()
             ->withCount('activeOrders')
-            ->orderByRaw('COALESCE(zone, "")')
-            ->orderBy('name')
-            ->get(['id', 'name', 'zone', 'active', 'reservation_name', 'reservation_at']);
+            ->get(['id', 'name', 'zone', 'active', 'reservation_name', 'reservation_at'])
+        );
     }
 
     private function resolveTableForOrder(int $tableId, ?Order $currentOrder = null): DiningTable

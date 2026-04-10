@@ -94,7 +94,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/orders/{id}/cancel', [CashierController::class, 'cancelOrder'])->name('cancel-order');
         Route::post('/orders/{id}/revert', [CashierController::class, 'revertOrder'])->name('revert-order');
         Route::post('/order/{id}/process', [CashierController::class, 'processOrder'])->name('process-order');
-        Route::get('/order/{id}/kitchen-print', [CashierController::class, 'printKitchenOrder'])->name('print-kitchen-order');
+        Route::get('/order/{id}/kitchen-print/{scope?}', [CashierController::class, 'printKitchenOrder'])->name('print-kitchen-order');
         Route::get('/order/{id}/receipt', [CashierController::class, 'printReceipt'])->name('print-receipt');
         Route::get('/order/{id}/download', [CashierController::class, 'downloadReceipt'])->name('download-receipt');
         Route::get('/sales', [CashierController::class, 'sales'])->name('sales');

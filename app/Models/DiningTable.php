@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 
 class DiningTable extends Model
 {
@@ -74,10 +75,9 @@ class DiningTable extends Model
             ? $this->mergedChildren
             : $this->mergedChildren()->get();
 
-        return collect([$this])
-            ->merge($children)
-            ->sortBy('name')
-            ->values();
+        return self::sortCollectionByName(
+            collect([$this])->merge($children)
+        );
     }
 
     public function getMergedDisplayNameAttribute(): string
@@ -134,5 +134,35 @@ class DiningTable extends Model
     public function scopeRoots($query)
     {
         return $query->whereNull('merged_into_table_id');
+    }
+
+    public static function sortCollectionByName(Collection $tables): Collection
+    {
+        return $tables
+            ->sort(fn (self $left, self $right) => self::compareNaturalLabels($left->name, $right->name))
+            ->values();
+    }
+
+    public static function sortCollectionByZoneAndName(Collection $tables): Collection
+    {
+        return $tables
+            ->sort(function (self $left, self $right) {
+                $zoneComparison = self::compareNaturalLabels($left->zone, $right->zone);
+
+                if ($zoneComparison !== 0) {
+                    return $zoneComparison;
+                }
+
+                return self::compareNaturalLabels($left->name, $right->name);
+            })
+            ->values();
+    }
+
+    private static function compareNaturalLabels(?string $left, ?string $right): int
+    {
+        return strnatcasecmp(
+            trim((string) $left),
+            trim((string) $right)
+        );
     }
 }

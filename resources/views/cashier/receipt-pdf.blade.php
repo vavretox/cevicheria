@@ -24,6 +24,25 @@
             padding: 20px;
             font-size: 13px;
             line-height: 1.35;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .receipt {
+            position: relative;
+            z-index: 1;
+        }
+
+        .receipt-watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 52mm;
+            opacity: 0.07;
+            transform: translate(-50%, -50%);
+            z-index: 0;
+            pointer-events: none;
+            filter: grayscale(100%);
         }
 
         .receipt-header {
@@ -58,6 +77,7 @@
         .receipt-table td {
             padding: 5px 2px;
             text-align: left;
+            vertical-align: top;
         }
 
         .receipt-table th {
@@ -99,6 +119,7 @@
     </style>
 </head>
 <body>
+    <img src="{{ asset('images/logo-los-pepes.jpeg') }}" alt="Logo Los Pepes" class="receipt-watermark">
     <div class="receipt">
         <!-- Header -->
         <div class="receipt-header">
@@ -113,19 +134,6 @@
             <p><strong>BOLETA DE VENTA</strong></p>
             <p>Nro: {{ $order->display_number }}</p>
             <p>Fecha: {{ $order->completed_at ? $order->completed_at->format('d/m/Y H:i:s') : $order->created_at->format('d/m/Y H:i:s') }}</p>
-            <p>Mesa: {{ $order->table_label }}</p>
-            <p>Atendido por: {{ $order->user->name }}</p>
-            @if($order->cashier)
-            <p>Cajero: {{ $order->cashier->name }}</p>
-            @endif
-            <p>Pago: {{ $order->payment_method === 'cash' ? 'Efectivo' : ($order->payment_method === 'mixed' ? 'Efectivo + QR' : 'QR') }}</p>
-            @if($order->payment_method === 'cash')
-            <p>Recibido: Bs. {{ number_format($order->amount_received ?? 0, 2) }}</p>
-            <p>Vuelto: Bs. {{ number_format($order->change_amount ?? 0, 2) }}</p>
-            @elseif($order->payment_method === 'mixed')
-            <p>Efectivo: Bs. {{ number_format($order->cash_paid_amount ?? 0, 2) }}</p>
-            <p>QR: Bs. {{ number_format($order->qr_paid_amount ?? 0, 2) }}</p>
-            @endif
         </div>
 
         <!-- Productos -->
@@ -143,7 +151,7 @@
                 <tr>
                     <td>{{ $detail->quantity }}</td>
                     <td>
-                        {{ Str::limit($detail->product->name, 15) }}
+                        {{ $detail->product->name }}
                         <div style="font-size: 10px;">{{ $detail->service_type_label }}</div>
                     </td>
                     <td class="text-right">{{ number_format($detail->unit_price, 2) }}</td>

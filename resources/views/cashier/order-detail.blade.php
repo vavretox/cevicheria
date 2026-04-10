@@ -177,7 +177,7 @@
                                 @endif
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="cashierOrderItemsBody">
                             @foreach($order->details as $detail)
                             <tr data-item-key="detail-{{ $detail->id }}" data-product-id="{{ $detail->product_id }}">
                                 <td>
@@ -276,7 +276,13 @@
                         </button>
                     </div>
                 </div>
-                <div class="mt-3 text-end">
+                <div class="mt-3 d-flex justify-content-end flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="printKitchenMainBtn">
+                        <i class="fas fa-print me-1"></i>Imprimir cocina
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="printKitchenAddedBtn" {{ $canPrintAdded ? '' : 'disabled' }}>
+                        <i class="fas fa-layer-group me-1"></i>Imprimir recién agregados
+                    </button>
                     <button class="btn btn-success btn-sm" id="saveOrderChanges">
                         <i class="fas fa-save me-1"></i>Guardar cambios
                     </button>
@@ -388,7 +394,7 @@
                     @endif
                 </div>
                 <a href="{{ route('cashier.print-receipt', $order->id) }}" 
-                   class="btn btn-primary w-100" target="_blank">
+                   class="btn btn-primary w-100">
                     <i class="fas fa-print me-2"></i>Imprimir Boleta
                 </a>
                 <form action="{{ route('cashier.revert-order', $order->id) }}" method="POST" class="mt-2">
@@ -407,67 +413,383 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="cashierFoodNotesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-clipboard-list me-2"></i>Indicaciones del producto
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3">
+                    <strong id="cashierFoodNotesProductName"></strong>
+                    <span class="text-muted d-block small">Marca las indicaciones para este alimento.</span>
+                </p>
+                <div class="d-grid gap-2">
+                    <label class="form-check border rounded p-3 cashier-food-note-option">
+                        <input class="form-check-input cashier-food-note-input" type="checkbox" value="SIN PLATANO">
+                        <span class="form-check-label">SIN PLATANO</span>
+                    </label>
+                    <label class="form-check border rounded p-3 cashier-food-note-option">
+                        <input class="form-check-input cashier-food-note-input" type="checkbox" value="SIN CHOLO">
+                        <span class="form-check-label">SIN CHOLO</span>
+                    </label>
+                    <label class="form-check border rounded p-3 cashier-food-note-option">
+                        <input class="form-check-input cashier-food-note-input" type="checkbox" value="SIN CEBOLLA">
+                        <span class="form-check-label">SIN CEBOLLA</span>
+                    </label>
+                    <label class="form-check border rounded p-3 cashier-food-note-option">
+                        <input class="form-check-input cashier-food-note-input" type="checkbox" value="SIN CILANTRO">
+                        <span class="form-check-label">SIN CILANTRO</span>
+                    </label>
+                    <label class="form-check border rounded p-3 cashier-food-note-option">
+                        <input class="form-check-input cashier-food-note-input" type="checkbox" value="SIN LECHUGA">
+                        <span class="form-check-label">SIN LECHUGA</span>
+                    </label>
+                    <label class="form-check border rounded p-3 cashier-food-note-option">
+                        <input class="form-check-input cashier-food-note-input" type="checkbox" value="COMPLETO" id="cashierFoodNoteCompleteOption">
+                        <span class="form-check-label">COMPLETO</span>
+                    </label>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label fw-bold small text-uppercase">Tipo de servicio</label>
+                    <select class="form-select form-select-sm" id="cashierFoodServiceType">
+                        <option value="dine_in">En mesa</option>
+                        <option value="takeaway">Para llevar</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmCashierFoodNotes">
+                    <i class="fas fa-check me-1"></i>Agregar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container position-fixed top-0 end-0 p-3" id="cashierToastContainer" style="z-index: 1100;"></div>
+<iframe id="cashierKitchenPrintFrame" title="Ticket de cocina caja" class="d-none"></iframe>
 @endsection
 
 @if($order->status === 'pending')
+@php
+    $cashierEditableItems = $order->details->map(function ($detail) {
+        return [
+            'item_key' => 'detail-' . $detail->id,
+            'product_id' => (int) $detail->product_id,
+            'product_name' => $detail->product?->name ?? 'Producto',
+            'image_url' => $detail->product?->image_url,
+            'quantity' => (int) $detail->quantity,
+            'unit_price' => (float) $detail->unit_price,
+            'notes' => $detail->notes ?? '',
+            'service_type' => $detail->service_type ?? 'dine_in',
+            'service_type_label' => $detail->service_type_label,
+        ];
+    })->values();
+@endphp
 @section('scripts')
 <script>
 const productsCatalog = @json($products);
+@include('orders._editor-utils')
+const orderEditorUtils = window.orderEditorUtils;
+const kitchenPrintFrame = document.getElementById('cashierKitchenPrintFrame');
+const cashierFoodNotesModal = new bootstrap.Modal(document.getElementById('cashierFoodNotesModal'));
+let currentItems = @json($cashierEditableItems);
 let cashierDraftItemCounter = 0;
+let cashierKitchenPrintUrl = '';
+let cashierKitchenPrintLoaded = false;
+let cashierKitchenPrintTimeoutId = null;
+let shouldAutoPrintKitchen = false;
+let pendingFoodProduct = null;
 
 function nextCashierItemKey() {
     cashierDraftItemCounter += 1;
     return `draft-${cashierDraftItemCounter}`;
 }
 
+function directCashierKitchenPrint(printUrl) {
+    cashierKitchenPrintUrl = printUrl;
+    cashierKitchenPrintLoaded = false;
+    shouldAutoPrintKitchen = true;
+    startCashierKitchenPrintTimeout();
+
+    if (kitchenPrintFrame) {
+        kitchenPrintFrame.src = printUrl;
+    }
+
+    showCashierToast('info', 'Preparando ticket de cocina...');
+}
+
+function findCashierItem(itemKey) {
+    return currentItems.find(item => item.item_key === itemKey);
+}
+
 function collectItems() {
-    const items = [];
-    $('table tbody tr[data-item-key]').each(function() {
-        const row = $(this);
-        const productId = parseInt(row.data('product-id'), 10);
-        const qty = parseInt(row.find('.qty-input').val(), 10);
-        const unitPrice = parseFloat(row.find('.price-input').val());
-        const notes = row.find('.note-input').val();
-        const serviceType = row.find('.service-type-input').val() || 'dine_in';
-        if (productId && qty >= 0) {
-            items.push({
-                product_id: productId,
-                quantity: qty,
-                unit_price: isNaN(unitPrice) ? 0 : unitPrice,
-                notes: notes,
-                service_type: serviceType
-            });
+    return currentItems.map(item => ({
+        product_id: item.product_id,
+        quantity: Math.max(0, parseInt(item.quantity, 10) || 0),
+        unit_price: Number(item.unit_price || 0),
+        notes: item.notes || '',
+        service_type: item.service_type || 'dine_in'
+    }));
+}
+
+function printCashierKitchenTicket(isAuto = false) {
+    if (!kitchenPrintFrame || !kitchenPrintFrame.contentWindow || !cashierKitchenPrintLoaded) {
+        if (!isAuto) {
+            showCashierToast('warning', 'La vista de impresión de cocina aún no está lista.');
         }
-    });
-    return items;
+        return;
+    }
+
+    try {
+        kitchenPrintFrame.contentWindow.focus();
+        kitchenPrintFrame.contentWindow.print();
+        shouldAutoPrintKitchen = false;
+
+        if (isAuto) {
+            showCashierToast('info', 'Se abrió la impresión del ticket de cocina.');
+        }
+    } catch (error) {
+        if (isAuto) {
+            showCashierToast('warning', 'No se pudo abrir la impresión automática de cocina.');
+        } else {
+            showCashierToast('danger', 'No se pudo abrir la impresión de cocina.');
+        }
+    }
+}
+
+function startCashierKitchenPrintTimeout() {
+    clearCashierKitchenPrintTimeout();
+    cashierKitchenPrintTimeoutId = setTimeout(function() {
+        if (!cashierKitchenPrintLoaded) {
+            handleCashierKitchenPrintLoadError();
+        }
+    }, 8000);
+}
+
+function clearCashierKitchenPrintTimeout() {
+    if (cashierKitchenPrintTimeoutId) {
+        clearTimeout(cashierKitchenPrintTimeoutId);
+        cashierKitchenPrintTimeoutId = null;
+    }
+}
+
+function handleCashierKitchenPrintLoadError() {
+    clearCashierKitchenPrintTimeout();
+    shouldAutoPrintKitchen = false;
+    showCashierToast('warning', 'No se pudo cargar la vista de impresión de cocina.');
 }
 
 function recalcTotals() {
-    let subtotal = 0;
-    $('table tbody tr').each(function() {
-        const qtyInput = $(this).find('.qty-input');
-        const priceInput = $(this).find('.price-input');
-        if (!qtyInput.length || !priceInput.length) return;
-        const qty = parseInt(qtyInput.val(), 10) || 0;
-        const price = parseFloat(priceInput.val()) || 0;
-        const rowSubtotal = qty * price;
-        $(this).find('.row-subtotal').text('Bs. ' + rowSubtotal.toFixed(2));
-        subtotal += rowSubtotal;
-    });
+    const subtotal = currentItems.reduce((sum, item) => {
+        return sum + ((parseInt(item.quantity, 10) || 0) * (Number(item.unit_price) || 0));
+    }, 0);
+
     $('#summarySubtotal').text('Bs. ' + subtotal.toFixed(2));
     $('#summaryTotal').text('Bs. ' + subtotal.toFixed(2));
 }
 
-$(document).on('change keyup', '.qty-input, .price-input', function() {
+function renderCashierItems() {
+    const tbody = $('#cashierOrderItemsBody');
+    if (!tbody.length) {
+        recalcTotals();
+        return;
+    }
+
+    const rows = currentItems.map(item => {
+        const rowSubtotal = (parseInt(item.quantity, 10) || 0) * (Number(item.unit_price) || 0);
+        const serviceType = item.service_type || 'dine_in';
+        const imageUrl = item.image_url || 'https://via.placeholder.com/80?text=?';
+
+        return `
+            <tr data-item-key="${item.item_key}" data-product-id="${item.product_id}">
+                <td>
+                    <div class="d-flex align-items-center">
+                        <img src="${imageUrl}"
+                             class="product-detail-image me-3"
+                             onerror="this.src='https://via.placeholder.com/80?text=?'">
+                        <div>
+                            <strong>${item.product_name}</strong>
+                        </div>
+                    </div>
+                </td>
+                <td class="align-middle">
+                    <select class="form-select form-select-sm service-type-input" data-item-key="${item.item_key}">
+                        <option value="dine_in" ${serviceType === 'dine_in' ? 'selected' : ''}>En mesa</option>
+                        <option value="takeaway" ${serviceType === 'takeaway' ? 'selected' : ''}>Para llevar</option>
+                    </select>
+                </td>
+                <td class="text-center align-middle">
+                    <input type="number" class="form-control form-control-sm text-center qty-input"
+                           min="0" value="${parseInt(item.quantity, 10) || 0}"
+                           data-item-key="${item.item_key}">
+                </td>
+                <td class="text-end align-middle">
+                    <input type="number" min="0" step="0.01" class="form-control form-control-sm text-end price-input"
+                           value="${(Number(item.unit_price) || 0).toFixed(2)}"
+                           data-item-key="${item.item_key}">
+                </td>
+                <td class="text-end align-middle">
+                    <strong class="row-subtotal">Bs. ${rowSubtotal.toFixed(2)}</strong>
+                </td>
+                <td class="align-middle">
+                    <input type="text" class="form-control form-control-sm note-input"
+                           value="${item.notes || ''}" data-item-key="${item.item_key}">
+                </td>
+                <td class="text-end align-middle">
+                    <button class="btn btn-sm btn-outline-danger remove-item"
+                            data-item-key="${item.item_key}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    tbody.html(rows);
+    recalcTotals();
+}
+
+function addOrUpdateCashierItem(newItem) {
+    orderEditorUtils.mergeOrderItem(currentItems, newItem, {
+        includeUnitPriceInSignature: true,
+        createItemKey: () => nextCashierItemKey(),
+    });
+}
+
+function isFoodProduct(product) {
+    return orderEditorUtils.isFoodProduct(product);
+}
+
+function resetCashierFoodNotesModal() {
+    pendingFoodProduct = null;
+    $('#cashierFoodNotesProductName').text('');
+    $('.cashier-food-note-input').prop('checked', false);
+    $('#cashierFoodServiceType').val($('#addProductServiceType').val() || 'dine_in');
+    syncCashierFoodNoteStyles();
+}
+
+function getSelectedCashierFoodNotes() {
+    return orderEditorUtils.getCheckedValues('.cashier-food-note-input');
+}
+
+function getSelectedCashierFoodServiceType() {
+    return orderEditorUtils.normalizeServiceType($('#cashierFoodServiceType').val());
+}
+
+function syncCashierFoodNoteStyles() {
+    orderEditorUtils.syncToggleCardState('.cashier-food-note-option', '.cashier-food-note-input');
+}
+
+$(document).on('input change', '.qty-input', function() {
+    const item = findCashierItem($(this).data('item-key'));
+    if (!item) {
+        return;
+    }
+
+    item.quantity = Math.max(0, parseInt($(this).val(), 10) || 0);
+    const rowSubtotal = item.quantity * (Number(item.unit_price) || 0);
+    $(this).closest('tr').find('.row-subtotal').text('Bs. ' + rowSubtotal.toFixed(2));
     recalcTotals();
 });
 
-$(document).on('click', '.remove-item', function() {
-    const row = $(this).closest('tr');
-    row.find('.qty-input').val(0);
-    row.hide();
+$(document).on('input change', '.price-input', function() {
+    const item = findCashierItem($(this).data('item-key'));
+    if (!item) {
+        return;
+    }
+
+    item.unit_price = Math.max(0, Number($(this).val()) || 0);
+    const rowSubtotal = (parseInt(item.quantity, 10) || 0) * item.unit_price;
+    $(this).closest('tr').find('.row-subtotal').text('Bs. ' + rowSubtotal.toFixed(2));
     recalcTotals();
 });
+
+$(document).on('input change', '.note-input', function() {
+    const item = findCashierItem($(this).data('item-key'));
+    if (!item) {
+        return;
+    }
+
+    item.notes = $(this).val() || '';
+});
+
+$(document).on('change', '.service-type-input', function() {
+    const item = findCashierItem($(this).data('item-key'));
+    if (!item) {
+        return;
+    }
+
+    item.service_type = $(this).val() || 'dine_in';
+});
+
+$(document).on('click', '.remove-item', function() {
+    const itemKey = String($(this).data('item-key'));
+    currentItems = currentItems.filter(item => item.item_key !== itemKey);
+    renderCashierItems();
+});
+
+$('#cashierFoodNotesModal').on('hidden.bs.modal', function() {
+    resetCashierFoodNotesModal();
+});
+
+$('.cashier-food-note-input').on('change', function() {
+    const isComplete = this.value === 'COMPLETO';
+
+    if (isComplete && this.checked) {
+        $('.cashier-food-note-input').not(this).prop('checked', false);
+    }
+
+    if (!isComplete && this.checked) {
+        $('#cashierFoodNoteCompleteOption').prop('checked', false);
+    }
+
+    syncCashierFoodNoteStyles();
+});
+
+$('#confirmCashierFoodNotes').on('click', function() {
+    if (!pendingFoodProduct) {
+        return;
+    }
+
+    addOrUpdateCashierItem({
+        item_key: nextCashierItemKey(),
+        product_id: pendingFoodProduct.product_id,
+        product_name: pendingFoodProduct.product_name,
+        image_url: pendingFoodProduct.image_url || '',
+        quantity: pendingFoodProduct.quantity,
+        unit_price: pendingFoodProduct.unit_price,
+        notes: getSelectedCashierFoodNotes(),
+        service_type: getSelectedCashierFoodServiceType(),
+        service_type_label: orderEditorUtils.getServiceTypeLabel(getSelectedCashierFoodServiceType())
+    });
+
+    cashierFoodNotesModal.hide();
+    renderCashierItems();
+});
+
+if (kitchenPrintFrame) {
+    kitchenPrintFrame.addEventListener('load', function() {
+        cashierKitchenPrintLoaded = true;
+        clearCashierKitchenPrintTimeout();
+
+        if (shouldAutoPrintKitchen) {
+            setTimeout(function() {
+                printCashierKitchenTicket(true);
+            }, 200);
+        }
+    });
+
+    kitchenPrintFrame.addEventListener('error', function() {
+        handleCashierKitchenPrintLoadError();
+    });
+}
 
 $('#addProductBtn').on('click', function() {
     const productId = parseInt($('#addProductSelect').val(), 10);
@@ -475,46 +797,55 @@ $('#addProductBtn').on('click', function() {
     if (!qty || qty <= 0) return;
 
     const product = productsCatalog.find(p => p.id === productId);
-    const itemKey = nextCashierItemKey();
-    const row = `
-        <tr data-item-key="${itemKey}" data-product-id="${productId}">
-            <td>
-                <div class="d-flex align-items-center">
-                    <img src="https://via.placeholder.com/80?text=?"
-                         class="product-detail-image me-3"
-                         onerror="this.src='https://via.placeholder.com/80?text=?'">
-                    <div><strong>${product?.name || 'Producto'}</strong></div>
-                </div>
-            </td>
-            <td class="align-middle">
-                <select class="form-select form-select-sm service-type-input" data-item-key="${itemKey}">
-                    <option value="dine_in" ${($('#addProductServiceType').val() || 'dine_in') === 'dine_in' ? 'selected' : ''}>En mesa</option>
-                    <option value="takeaway" ${($('#addProductServiceType').val() || 'dine_in') === 'takeaway' ? 'selected' : ''}>Para llevar</option>
-                </select>
-            </td>
-            <td class="text-center align-middle">
-                <input type="number" class="form-control form-control-sm text-center qty-input"
-                       min="0" value="${qty}" data-item-key="${itemKey}">
-            </td>
-            <td class="text-end align-middle">
-                <input type="number" min="0" step="0.01" class="form-control form-control-sm text-end price-input"
-                       value="${Number(product?.price || 0).toFixed(2)}" data-item-key="${itemKey}">
-            </td>
-            <td class="text-end align-middle">
-                <strong class="row-subtotal">Bs. ${(Number(product?.price || 0) * qty).toFixed(2)}</strong>
-            </td>
-            <td class="align-middle">
-                <input type="text" class="form-control form-control-sm note-input" data-item-key="${itemKey}">
-            </td>
-            <td class="text-end align-middle">
-                <button class="btn btn-sm btn-outline-danger remove-item" data-item-key="${itemKey}">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </td>
-        </tr>
-    `;
-    $('table tbody').append(row);
-    recalcTotals();
+    if (!product) {
+        alert('Selecciona un producto valido.');
+        return;
+    }
+
+    const stock = Number(product.stock || 0);
+    if (stock <= 0) {
+        alert(`${product.name} está agotado.`);
+        return;
+    }
+
+    if (isFoodProduct(product)) {
+        pendingFoodProduct = {
+            product_id: productId,
+            product_name: product.name || 'Producto',
+            image_url: product.image_url || '',
+            quantity: qty,
+            unit_price: Number(product.price || 0),
+        };
+        $('#cashierFoodNotesProductName').text(pendingFoodProduct.product_name);
+        $('.cashier-food-note-input').prop('checked', false);
+        $('#cashierFoodServiceType').val($('#addProductServiceType').val() || 'dine_in');
+        syncCashierFoodNoteStyles();
+        cashierFoodNotesModal.show();
+        return;
+    }
+
+    addOrUpdateCashierItem({
+        item_key: nextCashierItemKey(),
+        product_id: productId,
+        product_name: product.name || 'Producto',
+        image_url: product.image_url || '',
+        quantity: qty,
+        unit_price: Number(product.price || 0),
+        notes: '',
+        service_type: $('#addProductServiceType').val() || 'dine_in',
+        service_type_label: orderEditorUtils.getServiceTypeLabel($('#addProductServiceType').val() || 'dine_in')
+    });
+
+    renderCashierItems();
+});
+
+$('#printKitchenMainBtn').on('click', function() {
+    directCashierKitchenPrint('{{ route("cashier.print-kitchen-order", ["id" => $order->id, "scope" => "main"]) }}');
+});
+
+$('#printKitchenAddedBtn').on('click', function() {
+    $(this).prop('disabled', true);
+    directCashierKitchenPrint('{{ route("cashier.print-kitchen-order", ["id" => $order->id, "scope" => "added"]) }}');
 });
 
 $('#saveOrderChanges').on('click', function() {
@@ -536,7 +867,7 @@ $('#saveOrderChanges').on('click', function() {
     });
 });
 
-recalcTotals();
+renderCashierItems();
 
 function syncPaymentFields() {
     const method = $('#paymentMethodSelect').val();
@@ -547,6 +878,41 @@ function syncPaymentFields() {
     if (!isMixed) {
         $('#cashPaidAmountInput, #qrPaidAmountInput').val('');
     }
+}
+
+function showCashierToast(type, message) {
+    const container = document.getElementById('cashierToastContainer');
+    if (!container) {
+        return;
+    }
+
+    const toneMap = {
+        success: 'text-bg-success',
+        danger: 'text-bg-danger',
+        warning: 'text-bg-warning',
+        info: 'text-bg-info',
+    };
+
+    const toastEl = document.createElement('div');
+    toastEl.className = `toast align-items-center border-0 ${toneMap[type] || 'text-bg-secondary'}`;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.setAttribute('aria-live', 'assertive');
+    toastEl.setAttribute('aria-atomic', 'true');
+    toastEl.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+        </div>
+    `;
+
+    container.appendChild(toastEl);
+
+    const toast = new bootstrap.Toast(toastEl, { delay: 3500 });
+    toast.show();
+
+    toastEl.addEventListener('hidden.bs.toast', function() {
+        toastEl.remove();
+    });
 }
 
 $('#paymentMethodSelect').on('change', function() {

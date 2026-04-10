@@ -11,6 +11,7 @@ class Category extends Model
 
     public const CODE_BEVERAGES = 'bebidas';
     public const CODE_CEVICHES = 'ceviches';
+    public const CODE_ENTRADAS = 'entradas';
     public const CODE_MAIN_DISHES = 'platos_de_fondo';
 
     protected $fillable = [
@@ -43,6 +44,7 @@ class Category extends Model
     {
         return in_array($this->code, [
             self::CODE_CEVICHES,
+            self::CODE_ENTRADAS,
             self::CODE_MAIN_DISHES,
         ], true);
     }

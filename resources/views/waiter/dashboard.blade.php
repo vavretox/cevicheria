@@ -590,6 +590,14 @@
                 </p>
                 <div class="d-grid gap-2 mb-3" id="cevicheNotesGroup" style="display:none !important;">
                     <label class="form-check ceviche-option">
+                        <input class="form-check-input ceviche-option-input" type="checkbox" value="SIN PLATANO">
+                        <span class="form-check-label">SIN PLATANO</span>
+                    </label>
+                    <label class="form-check ceviche-option">
+                        <input class="form-check-input ceviche-option-input" type="checkbox" value="SIN CHOLO">
+                        <span class="form-check-label">SIN CHOLO</span>
+                    </label>
+                    <label class="form-check ceviche-option">
                         <input class="form-check-input ceviche-option-input" type="checkbox" value="SIN CEBOLLA">
                         <span class="form-check-label">SIN CEBOLLA</span>
                     </label>
@@ -658,38 +666,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="kitchenPrintModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-print me-2"></i>Impresión de cocina
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-success mb-3">
-                    <i class="fas fa-circle-check me-2"></i>Pedido creado correctamente.
-                    <div class="small mt-1" id="kitchenPrintStatus">Cargando vista para imprimir...</div>
-                </div>
-                <div class="ratio ratio-4x3 border rounded overflow-hidden">
-                    <iframe id="kitchenPrintFrame" title="Comanda de cocina"></iframe>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                    Cerrar
-                </button>
-                <button type="button" class="btn btn-outline-primary" id="retryKitchenLoad" style="display: none;">
-                    <i class="fas fa-rotate-right me-1"></i>Reintentar cargar
-                </button>
-                <button type="button" class="btn btn-success" id="printKitchenNow" disabled>
-                    <i class="fas fa-print me-1"></i>Imprimir cocina
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
+<iframe id="kitchenPrintFrame" title="Comanda de cocina" class="d-none"></iframe>
 
 <div class="toast-container position-fixed top-0 end-0 p-3" id="appToastContainer" style="z-index: 1100;"></div>
 @endsection
@@ -704,11 +681,9 @@ let currentKitchenPrintUrl = '';
 let kitchenFrameLoaded = false;
 let kitchenLoadTimeoutId = null;
 let shouldAutoPrintKitchen = false;
-let autoCloseKitchenModalTimeoutId = null;
 const cevicheOptionsModal = new bootstrap.Modal(document.getElementById('cevicheOptionsModal'));
 const tablePickerModal = new bootstrap.Modal(document.getElementById('tablePickerModal'));
 const confirmOrderModal = new bootstrap.Modal(document.getElementById('confirmOrderModal'));
-const kitchenPrintModal = new bootstrap.Modal(document.getElementById('kitchenPrintModal'));
 const kitchenPrintFrame = document.getElementById('kitchenPrintFrame');
 
 function createOrderItemKey(productId, notes = '', serviceType = 'dine_in') {
@@ -786,21 +761,10 @@ $(document).ready(function() {
         submitOrderAndPrint();
     });
 
-    $('#printKitchenNow').on('click', function() {
-        printKitchenTicket();
-    });
-
-    $('#retryKitchenLoad').on('click', function() {
-        retryKitchenPrintLoad();
-    });
-
     if (kitchenPrintFrame) {
         kitchenPrintFrame.addEventListener('load', function() {
             kitchenFrameLoaded = true;
             clearKitchenLoadTimeout();
-            $('#kitchenPrintStatus').text('Vista lista. Puedes imprimir la comanda.');
-            $('#printKitchenNow').prop('disabled', false);
-            $('#retryKitchenLoad').hide();
 
             if (shouldAutoPrintKitchen) {
                 setTimeout(function() {
@@ -813,24 +777,6 @@ $(document).ready(function() {
             handleKitchenFrameLoadError();
         });
     }
-
-    $('#kitchenPrintModal').on('hidden.bs.modal', function() {
-        clearKitchenLoadTimeout();
-        clearAutoCloseKitchenModalTimeout();
-        kitchenFrameLoaded = false;
-        currentKitchenPrintUrl = '';
-        shouldAutoPrintKitchen = false;
-        $('#retryKitchenLoad').hide();
-
-        if (kitchenPrintFrame) {
-            kitchenPrintFrame.src = 'about:blank';
-        }
-
-        if (shouldReloadAfterKitchenModalClose) {
-            shouldReloadAfterKitchenModalClose = false;
-            location.reload();
-        }
-    });
 
     // Limpiar pedido
     $('#clearOrder').click(function() {
@@ -1249,9 +1195,6 @@ function submitOrderAndPrint() {
                 .replace('__ORDER_ID__', response.order_id);
 
             shouldReloadAfterKitchenModalClose = true;
-            $('#printKitchenNow').prop('disabled', true);
-            $('#retryKitchenLoad').hide();
-            $('#kitchenPrintStatus').text('Cargando vista para imprimir...');
             kitchenFrameLoaded = false;
             currentKitchenPrintUrl = printUrl;
             shouldAutoPrintKitchen = true;
@@ -1262,8 +1205,7 @@ function submitOrderAndPrint() {
 
             confirmOrderModal.hide();
             clearOrder();
-            kitchenPrintModal.show();
-            showToast('success', 'Pedido creado. Prepara la impresión de cocina.');
+            showToast('success', 'Pedido creado. Preparando impresión de cocina...');
         },
         error: function(xhr) {
             showToast('danger', 'Error al crear el pedido: ' + (xhr.responseJSON?.message || 'Error desconocido'));
@@ -1294,11 +1236,18 @@ function printKitchenTicket(isAuto = false) {
         if (isAuto) {
             showToast('info', 'Se abrió la impresión automática de cocina.');
         }
+
+        if (shouldReloadAfterKitchenModalClose) {
+            shouldReloadAfterKitchenModalClose = false;
+            setTimeout(function() {
+                location.reload();
+            }, 1200);
+        }
     } catch (error) {
         if (isAuto) {
-            showToast('warning', 'No se pudo imprimir automáticamente. Usa "Imprimir cocina".');
+            showToast('warning', 'No se pudo abrir la impresión automática de cocina.');
         } else {
-            showToast('danger', 'No se pudo abrir la impresión. Usa "Reintentar cargar".');
+            showToast('danger', 'No se pudo abrir la impresión.');
         }
     }
 }
@@ -1345,41 +1294,8 @@ function clearKitchenLoadTimeout() {
 
 function handleKitchenFrameLoadError() {
     clearKitchenLoadTimeout();
-    $('#kitchenPrintStatus').text('No se pudo cargar automáticamente la comanda. Reintenta la carga.');
-    $('#retryKitchenLoad').show();
-    $('#printKitchenNow').prop('disabled', true);
-    showToast('warning', 'No se pudo cargar la vista de impresión. Usa "Reintentar cargar".');
-}
-
-function retryKitchenPrintLoad() {
-    if (!currentKitchenPrintUrl || !kitchenPrintFrame) {
-        return;
-    }
-
-    kitchenFrameLoaded = false;
-    shouldAutoPrintKitchen = true;
-    $('#printKitchenNow').prop('disabled', true);
-    $('#retryKitchenLoad').hide();
-    $('#kitchenPrintStatus').text('Reintentando carga de comanda...');
-    startKitchenLoadTimeout();
-    kitchenPrintFrame.src = currentKitchenPrintUrl;
-}
-
-function scheduleKitchenModalAutoClose() {
-    clearAutoCloseKitchenModalTimeout();
-    autoCloseKitchenModalTimeoutId = setTimeout(function() {
-        const modalEl = document.getElementById('kitchenPrintModal');
-        if (modalEl && modalEl.classList.contains('show')) {
-            kitchenPrintModal.hide();
-        }
-    }, 2500);
-}
-
-function clearAutoCloseKitchenModalTimeout() {
-    if (autoCloseKitchenModalTimeoutId) {
-        clearTimeout(autoCloseKitchenModalTimeoutId);
-        autoCloseKitchenModalTimeoutId = null;
-    }
+    shouldAutoPrintKitchen = false;
+    showToast('warning', 'No se pudo cargar la vista de impresión de cocina.');
 }
 
 function showToast(type, message) {

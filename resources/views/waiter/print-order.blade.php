@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ $printLabel }} #{{ $printReference ?? $order->display_number }}</title>
     <style>
+        @page {
+            size: 80mm auto;
+            margin: 4mm;
+        }
+
         body {
             font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
             margin: 0;
@@ -51,11 +56,15 @@
         }
 
         .item {
-            margin-bottom: 6px;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px dotted #000;
         }
 
         .item:last-child {
             margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
         }
 
         .item-line {
@@ -64,6 +73,21 @@
             gap: 8px;
             font-size: 13px;
             font-weight: bold;
+        }
+
+        .item-qty {
+            min-width: 48px;
+            font-size: 14px;
+        }
+
+        .item-name {
+            flex: 1;
+        }
+
+        .section-title {
+            padding-left: 0;
+            margin-bottom: 8px;
+            font-size: 13px;
         }
 
         .notes {
@@ -149,16 +173,17 @@
                 </div>
             @else
                 @if($dineInItems->isNotEmpty())
-                    <div class="notes" style="padding-left:0; margin-bottom:8px; font-size:13px;">
+                    <div class="section-title notes">
                         <strong>PARA MESA</strong>
                     </div>
                     @foreach($dineInItems as $detail)
                         <div class="item">
                             <div class="item-line">
-                                <span>{{ $detail->quantity }} x {{ $detail->product?->name ?? 'Producto' }}</span>
+                                <span class="item-qty">{{ $detail->quantity }}x</span>
+                                <span class="item-name">{{ $detail->product?->name ?? 'Producto' }}</span>
                             </div>
                             @if($detail->notes)
-                                <div class="notes">{{ $detail->notes }}</div>
+                                <div class="notes">Indicacion: {{ $detail->notes }}</div>
                             @endif
                         </div>
                     @endforeach
@@ -168,16 +193,17 @@
                     @if($dineInItems->isNotEmpty())
                         <div style="border-top:1px dashed #000; margin:10px 0;"></div>
                     @endif
-                    <div class="notes" style="padding-left:0; margin-bottom:8px; font-size:13px;">
+                    <div class="section-title notes">
                         <strong>PARA LLEVAR</strong>
                     </div>
                     @foreach($takeawayItems as $detail)
                         <div class="item">
                             <div class="item-line">
-                                <span>{{ $detail->quantity }} x {{ $detail->product?->name ?? 'Producto' }}</span>
+                                <span class="item-qty">{{ $detail->quantity }}x</span>
+                                <span class="item-name">{{ $detail->product?->name ?? 'Producto' }}</span>
                             </div>
                             @if($detail->notes)
-                                <div class="notes">{{ $detail->notes }}</div>
+                                <div class="notes">Indicacion: {{ $detail->notes }}</div>
                             @endif
                         </div>
                     @endforeach

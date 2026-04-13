@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte de Ventas - Cevichería Los Pepes</title>
+    <title>Reporte de Ventas</title>
     <style>
         :root {
             --text: #1f2937;
@@ -36,6 +36,14 @@
         .title h1 {
             margin: 0 0 6px 0;
             font-size: 22px;
+        }
+
+        .title-logo {
+            display: block;
+            width: 120px;
+            max-width: 100%;
+            height: auto;
+            margin: 0 0 8px 0;
         }
 
         .title p {
@@ -123,7 +131,9 @@
 <body>
     <div class="header">
         <div class="title">
-            <h1>Reporte de Ventas - Cevichería Los Pepes</h1>
+            <img src="{{ asset('images/logo-los-pepes.jpeg') }}" alt="Logo" class="title-logo">
+            <h1>Reporte de Ventas</h1>
+            <p>Dirección: B. Bartolome Attard C. Capitan Mendieta</p>
             <p>
                 @if($type === 'month')
                     Resumen por mes

@@ -319,7 +319,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('{{ asset('sw.js') }}');
+                navigator.serviceWorker.register('{{ asset('sw.js') }}', { updateViaCache: 'none' });
             });
         }
     </script>

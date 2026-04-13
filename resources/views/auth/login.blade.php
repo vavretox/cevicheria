@@ -183,7 +183,14 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('{{ asset('sw.js') }}');
+                navigator.serviceWorker.getRegistrations()
+                    .then((registrations) => registrations.forEach((registration) => registration.unregister()));
+            });
+        }
+
+        if ('caches' in window) {
+            window.addEventListener('load', () => {
+                caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
             });
         }
     </script>

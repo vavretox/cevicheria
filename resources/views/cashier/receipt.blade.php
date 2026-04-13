@@ -1,4 +1,4 @@
-﻿?<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -33,18 +33,6 @@
             z-index: 1;
         }
 
-        .receipt-watermark {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            width: 52mm;
-            opacity: 0.07;
-            transform: translate(-50%, -50%);
-            z-index: 0;
-            pointer-events: none;
-            filter: grayscale(100%);
-        }
-
         .receipt-header {
             text-align: center;
             border-bottom: 2px dashed #000;
@@ -52,10 +40,12 @@
             margin-bottom: 15px;
         }
 
-        .receipt-header h1 {
-            font-size: 24px;
-            font-weight: bold;
-            margin: 10px 0;
+        .receipt-logo {
+            display: block;
+            width: 42mm;
+            max-width: 100%;
+            height: auto;
+            margin: 0 auto 8px auto;
         }
 
         .receipt-info {
@@ -119,13 +109,12 @@
     </style>
 </head>
 <body>
-    <img src="{{ asset('images/logo-los-pepes.jpeg') }}" alt="Logo Los Pepes" class="receipt-watermark">
     <div class="receipt">
         <!-- Header -->
         <div class="receipt-header">
-            <h1>Cevichería Los Pepes</h1>
+            <img src="{{ asset('images/logo-los-pepes.jpeg') }}" alt="Logo" class="receipt-logo">
             <p style="margin: 5px 0;">Restaurante de Ceviche y Mariscos</p>
-            <p style="margin: 5px 0;">Dirección: URB. MOTO MENDEZ, CAP JOSE MENDIETA</p>
+            <p style="margin: 5px 0;">Dirección: B. Bartolome Attard C. Capitan Mendieta</p>
             <p style="margin: 5px 0;">Teléfono: 67691315</p>
         </div>
 

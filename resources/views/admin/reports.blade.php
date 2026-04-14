@@ -135,7 +135,7 @@
                                 </a>
                             </li>
                             <li>
-                                <a class="dropdown-item" href="{{ route('admin.reports.thermal-print', $query) }}" target="_blank" rel="noopener">
+                                <a class="dropdown-item" href="{{ route('admin.reports.thermal-print', $query) }}">
                                     <i class="fas fa-receipt me-2 text-warning"></i>Impresión rápida térmica
                                 </a>
                             </li>

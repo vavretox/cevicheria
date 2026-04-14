@@ -331,22 +331,20 @@
             <div>
                 <div><strong>Subtotal:</strong> <span id="quickSubtotal">Bs. 0.00</span></div>
                 <div><strong>Total:</strong> <span id="quickTotal">Bs. 0.00</span></div>
-                <div class="form-check mt-2">
-                    <input class="form-check-input" type="checkbox" id="quickPrintKitchen" checked>
-                    <label class="form-check-label" for="quickPrintKitchen">
-                        Imprimir cocina al crear pedido
-                    </label>
-                </div>
             </div>
             <div class="d-flex gap-2">
-                <button class="btn btn-outline-secondary" id="quickClear">
+                <button type="button" class="btn btn-outline-secondary" id="quickClear">
                     <i class="fas fa-trash me-1"></i>Limpiar
                 </button>
-                <button class="btn btn-primary" id="quickSend">
+                <button type="button" class="btn btn-outline-primary" id="quickPrint">
+                    <i class="fas fa-print me-1"></i>Imprimir
+                </button>
+                <button type="button" class="btn btn-primary" id="quickSend" disabled>
                     <i class="fas fa-paper-plane me-1"></i>Crear Pedido
                 </button>
             </div>
         </div>
+        <small class="text-muted d-block mt-2" id="quickPrintStatus">Primero imprime el pedido para habilitar Crear Pedido.</small>
         @if($availableTables->isEmpty())
             <small class="text-danger d-block mt-3">No hay mesas disponibles para pedidos en mesa. Igual puedes crear pedidos con el mesero Delivery.</small>
         @endif
@@ -459,6 +457,9 @@
 const quickProducts = @json($products);
 let quickItems = [];
 let quickItemCounter = 0;
+let cashierTableRefreshTimeoutId = null;
+const quickOrderDraftKey = 'cashierQuickOrderDraft';
+const quickOrderPrintedKey = 'cashierQuickOrderPrinted';
 const quickOrderModal = new bootstrap.Modal(document.getElementById('quickOrderModal'));
 
 function getQuickProductStock(product) {
@@ -503,6 +504,111 @@ function selectedWaiterIsDelivery() {
     return flaggedDelivery || waiterLabel.includes('delivery');
 }
 
+function quickOrderPayload() {
+    const isDelivery = selectedWaiterIsDelivery();
+
+    return {
+        table_id: isDelivery ? null : ($('#quickTable').val() || null),
+        waiter_id: $('#quickWaiter').val(),
+        items: quickItems.map(item => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.price,
+            notes: item.notes || '',
+            service_type: item.service_type || 'dine_in'
+        }))
+    };
+}
+
+function validateQuickOrder() {
+    const payload = quickOrderPayload();
+
+    if (!selectedWaiterIsDelivery() && !payload.table_id) {
+        alert('Selecciona una mesa');
+        return false;
+    }
+
+    if (!payload.waiter_id) {
+        alert('Selecciona un mesero');
+        return false;
+    }
+
+    if (quickItems.length === 0) {
+        alert('Agrega productos al pedido');
+        return false;
+    }
+
+    return true;
+}
+
+function saveQuickOrderDraft() {
+    localStorage.setItem(quickOrderDraftKey, JSON.stringify(quickOrderPayload()));
+}
+
+function clearQuickOrderDraft() {
+    localStorage.removeItem(quickOrderDraftKey);
+    localStorage.removeItem(quickOrderPrintedKey);
+}
+
+function syncQuickCreateButton() {
+    const hasPrinted = localStorage.getItem(quickOrderPrintedKey) === '1' && quickItems.length > 0;
+    $('#quickSend').prop('disabled', !hasPrinted);
+    $('#quickPrintStatus')
+        .toggleClass('text-success', hasPrinted)
+        .toggleClass('text-muted', !hasPrinted)
+        .text(hasPrinted ? 'Pedido impreso. Ya puedes crear el pedido.' : 'Primero imprime el pedido para habilitar Crear Pedido.');
+}
+
+function markQuickOrderChanged() {
+    localStorage.removeItem(quickOrderPrintedKey);
+    saveQuickOrderDraft();
+    syncQuickCreateButton();
+}
+
+function restoreQuickOrderDraft() {
+    const savedDraft = localStorage.getItem(quickOrderDraftKey);
+
+    if (!savedDraft) {
+        syncQuickCreateButton();
+        return;
+    }
+
+    try {
+        const draft = JSON.parse(savedDraft);
+        $('#quickWaiter').val(draft.waiter_id || '');
+        syncQuickWaiterMode();
+        quickItems = (draft.items || []).map(item => {
+            const product = quickProducts.find(p => Number(p.id) === Number(item.product_id));
+
+            return {
+                item_key: nextQuickItemKey(),
+                product_id: Number(item.product_id),
+                name: product?.name || 'Producto',
+                price: Number(item.unit_price ?? product?.price ?? 0),
+                quantity: Number(item.quantity || 1),
+                notes: item.notes || '',
+                service_type: item.service_type || 'dine_in'
+            };
+        });
+
+        if (!selectedWaiterIsDelivery() && draft.table_id) {
+            $('#quickTable').val(draft.table_id);
+            const selectedCard = $(`#quickTableBoard .table-card[data-table-id="${draft.table_id}"]`);
+            $('#quickTableBoard .table-card').removeClass('selected');
+            selectedCard.addClass('selected');
+            $('#quickTableLabel').text('Mesa seleccionada: ' + (selectedCard.data('table-name') || selectedCard.find('strong').text()));
+        }
+
+        renderQuickItems();
+        syncQtyInputs();
+        bindRemoveButtons();
+    } catch (error) {
+        clearQuickOrderDraft();
+    }
+
+    syncQuickCreateButton();
+}
+
 function syncQuickWaiterMode() {
     const isDelivery = selectedWaiterIsDelivery();
     $('#deliveryHelper').toggle(isDelivery);
@@ -522,8 +628,106 @@ function syncQuickWaiterMode() {
             $(this).prop('disabled', !selectable);
             $(this).attr('aria-disabled', selectable ? 'false' : 'true');
         });
-        $('#quickTableLabel').text('Selecciona una mesa desde el tablero.');
+        const selectedTableId = $('#quickTable').val();
+        const selectedCard = selectedTableId ? $(`#quickTableBoard .table-card[data-table-id="${selectedTableId}"]`) : $();
+        $('#quickTableLabel').text(
+            selectedCard.length
+                ? 'Mesa seleccionada: ' + (selectedCard.data('table-name') || selectedCard.find('strong').text())
+                : 'Selecciona una mesa desde el tablero.'
+        );
     }
+}
+
+function bindCashierTableBoardEvents() {
+    $('#quickTableBoard .table-card').off('click').on('click', function() {
+        if (selectedWaiterIsDelivery()) {
+            return;
+        }
+
+        if ($(this).data('selectable') !== 1 && $(this).data('selectable') !== '1') {
+            return;
+        }
+
+        $('#quickTableBoard .table-card').removeClass('selected');
+        $(this).addClass('selected');
+        $('#quickTable').val($(this).data('table-id'));
+        $('#quickTableLabel').text('Mesa seleccionada: ' + ($(this).data('table-name') || $(this).find('strong').text()));
+        markQuickOrderChanged();
+    });
+}
+
+function renderCashierTableCard(table, selectedTableId) {
+    const selectable = Boolean(table.selectable);
+    const statusLabels = {
+        available: 'Libre',
+        reserved: 'Reservada',
+        occupied: 'Ocupada',
+        closed: 'Cerrada',
+    };
+    const isSelected = Number(selectedTableId || 0) === Number(table.id);
+    const reservationMarkup = table.reservation_name
+        ? `
+            <div class="small text-muted">${table.reservation_name}</div>
+            ${table.reservation_at_label ? `<div class="small text-muted">${table.reservation_at_label}</div>` : ''}
+        `
+        : (table.group_reservation_summary ? `<div class="small text-muted">${table.group_reservation_summary}</div>` : '');
+
+    return `
+        <button
+            type="button"
+            class="table-card ${table.status} ${selectable ? '' : 'is-disabled'} ${isSelected ? 'selected' : ''}"
+            data-table-id="${table.id}"
+            data-table-name="${table.name}"
+            data-selectable="${selectable ? '1' : '0'}"
+            ${selectable ? '' : 'disabled'}
+            aria-disabled="${selectable ? 'false' : 'true'}"
+        >
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <strong>${table.name}</strong>
+                <span class="table-card-status">${statusLabels[table.status] || 'Libre'}</span>
+            </div>
+            ${table.zone ? `<div class="small text-muted mb-1">${table.zone}</div>` : ''}
+            <div class="small text-muted mb-1">Capacidad total: ${table.combined_capacity || '-'}</div>
+            ${reservationMarkup}
+        </button>
+    `;
+}
+
+function refreshCashierTableBoard() {
+    fetch(@json(route('cashier.tables.status')), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+    })
+        .then(response => response.ok ? response.json() : Promise.reject(new Error('refresh_failed')))
+        .then(data => {
+            const selectedTableId = $('#quickTable').val();
+            const selectedTable = (data.tables || []).find(table => Number(table.id) === Number(selectedTableId));
+
+            $('#quickTableBoard').html((data.tables || []).map(table => renderCashierTableCard(table, selectedTableId)).join(''));
+            bindCashierTableBoardEvents();
+
+            if (!selectedWaiterIsDelivery()) {
+                if (!selectedTable || !selectedTable.selectable) {
+                    $('#quickTable').val('');
+                    $('#quickTableLabel').text('Selecciona una mesa desde el tablero.');
+                } else {
+                    $('#quickTableLabel').text('Mesa seleccionada: ' + selectedTable.name);
+                }
+            }
+
+            syncQuickWaiterMode();
+        })
+        .catch(() => {})
+        .finally(() => {
+            scheduleCashierTableRefresh();
+        });
+}
+
+function scheduleCashierTableRefresh() {
+    clearTimeout(cashierTableRefreshTimeoutId);
+    cashierTableRefreshTimeoutId = setTimeout(refreshCashierTableBoard, 8000);
 }
 
 function nextQuickItemKey() {
@@ -606,6 +810,7 @@ function syncQtyInputs() {
         } else if (field === 'notes') {
             item.notes = $(this).val();
         }
+        markQuickOrderChanged();
         renderQuickItems();
         syncQtyInputs();
         bindRemoveButtons();
@@ -616,6 +821,7 @@ function bindRemoveButtons() {
     $('#quickItems [data-remove]').off('click').on('click', function() {
         const id = String($(this).data('remove'));
         quickItems = quickItems.filter(i => i.item_key !== id);
+        markQuickOrderChanged();
         renderQuickItems();
         syncQtyInputs();
         bindRemoveButtons();
@@ -651,8 +857,10 @@ $('#quickAdd').on('click', function() {
         name: product.name,
         price: Number(product.price),
         quantity: qty,
-        notes: ''
+        notes: '',
+        service_type: 'dine_in'
     });
+    markQuickOrderChanged();
     renderQuickItems();
     syncQtyInputs();
     bindRemoveButtons();
@@ -680,81 +888,76 @@ $('#quickClear').on('click', function() {
     quickItems = [];
     $('#quickTable').val('');
     $('#quickTableBoard .table-card').removeClass('selected');
+    clearQuickOrderDraft();
     renderQuickItems();
     syncQuickWaiterMode();
+    syncQuickCreateButton();
 });
 
-$('#quickSend').on('click', function() {
-    const isDelivery = selectedWaiterIsDelivery();
-    const tableId = $('#quickTable').val();
-    const waiterId = $('#quickWaiter').val();
-    const shouldPrintKitchen = $('#quickPrintKitchen').is(':checked');
-    let printWindow = null;
+function submitQuickOrder() {
+    if (!validateQuickOrder()) {
+        return;
+    }
+    if (localStorage.getItem(quickOrderPrintedKey) !== '1') {
+        alert('Primero imprime el pedido para poder crearlo.');
+        return;
+    }
 
-    if (!isDelivery && !tableId) {
-        alert('Selecciona una mesa');
-        return;
-    }
-    if (!waiterId) {
-        alert('Selecciona un mesero');
-        return;
-    }
-    if (quickItems.length === 0) {
-        alert('Agrega productos al pedido');
-        return;
-    }
-    if (shouldPrintKitchen) {
-        printWindow = window.open('', '_blank');
-    }
+    const payload = quickOrderPayload();
     $.ajax({
         url: '{{ route("cashier.create-order") }}',
         method: 'POST',
-        data: {
-            table_id: isDelivery ? null : (tableId || null),
-            waiter_id: waiterId,
-            items: quickItems
-        },
+        data: payload,
         success: function(response) {
-            if (shouldPrintKitchen && response.print_kitchen_url) {
-                if (printWindow) {
-                    printWindow.location = response.print_kitchen_url;
-                } else {
-                    window.open(response.print_kitchen_url, '_blank');
-                }
-            } else if (printWindow) {
-                printWindow.close();
-            }
             quickItems = [];
             $('#quickTable').val('');
+            clearQuickOrderDraft();
             renderQuickItems();
             location.reload();
         },
         error: function(xhr) {
-            if (printWindow) {
-                printWindow.close();
-            }
             alert('Error al crear el pedido: ' + (xhr.responseJSON?.message || 'Error desconocido'));
         }
     });
+}
+
+function printQuickOrderPreview() {
+    if (!validateQuickOrder()) {
+        return;
+    }
+
+    saveQuickOrderDraft();
+    localStorage.removeItem(quickOrderPrintedKey);
+    syncQuickCreateButton();
+
+    $.ajax({
+        url: '{{ route("cashier.quick-order.print-preview.store") }}',
+        method: 'POST',
+        data: quickOrderPayload(),
+        success: function(response) {
+            if (response.url) {
+                window.location.href = response.url;
+                return;
+            }
+            alert('No se pudo preparar la impresión del pedido.');
+        },
+        error: function(xhr) {
+            alert('Error al preparar la impresión: ' + (xhr.responseJSON?.message || 'Error desconocido'));
+        }
+    });
+}
+
+$('#quickSend').on('click', function() {
+    submitQuickOrder();
 });
 
-$('#quickTableBoard .table-card').on('click', function() {
-    if (selectedWaiterIsDelivery()) {
-        return;
-    }
-
-    if ($(this).data('selectable') !== 1 && $(this).data('selectable') !== '1') {
-        return;
-    }
-
-    $('#quickTableBoard .table-card').removeClass('selected');
-    $(this).addClass('selected');
-    $('#quickTable').val($(this).data('table-id'));
-    $('#quickTableLabel').text('Mesa seleccionada: ' + ($(this).data('table-name') || $(this).find('strong').text()));
+$('#quickPrint').on('click', function() {
+    printQuickOrderPreview();
 });
 
 $('#quickWaiter').on('change', function() {
     syncQuickWaiterMode();
+    markQuickOrderChanged();
 });
 
 function openQuickView(orderId) {
@@ -824,6 +1027,9 @@ function openQuickView(orderId) {
 renderQuickItems();
 updateQuickProductAvailability();
 syncQuickWaiterMode();
+bindCashierTableBoardEvents();
+restoreQuickOrderDraft();
+scheduleCashierTableRefresh();
 </script>
 @endsection
 

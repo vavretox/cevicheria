@@ -79,6 +79,7 @@ Route::middleware(['auth'])->group(function () {
     // Rutas del Cajero
     Route::middleware(['role:cajero,admin'])->prefix('cashier')->name('cashier.')->group(function () {
         Route::get('/dashboard', [CashierController::class, 'dashboard'])->name('dashboard');
+        Route::get('/tables/status', [CashierController::class, 'tableBoardStatus'])->name('tables.status');
         Route::get('/tables', [CashierController::class, 'tables'])->name('tables');
         Route::post('/tables', [CashierController::class, 'storeTable'])->name('tables.store');
         Route::post('/tables/merge', [CashierController::class, 'mergeTables'])->name('tables.merge');
@@ -88,6 +89,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/cash-sessions/open', [CashSessionController::class, 'open'])->name('cash-sessions.open');
         Route::post('/cash-sessions/{id}/close', [CashSessionController::class, 'close'])->name('cash-sessions.close');
         Route::post('/order/create', [CashierController::class, 'createOrder'])->name('create-order');
+        Route::post('/quick-order/print-preview', [CashierController::class, 'storeQuickOrderPrintPreview'])->name('quick-order.print-preview.store');
+        Route::get('/quick-order/print-preview', [CashierController::class, 'quickOrderPrintPreview'])->name('quick-order.print-preview');
         Route::get('/order/{id}', [CashierController::class, 'showOrder'])->name('show-order');
         Route::get('/order/{id}/summary', [CashierController::class, 'orderSummary'])->name('order-summary');
         Route::post('/orders/{id}/items', [CashierController::class, 'updateOrderItems'])->name('update-order-items');
@@ -107,6 +110,7 @@ Route::middleware(['auth'])->group(function () {
     // Rutas del Mesero
     Route::middleware(['role:mesero,admin'])->prefix('waiter')->name('waiter.')->group(function () {
         Route::get('/dashboard', [WaiterController::class, 'dashboard'])->name('dashboard');
+        Route::get('/tables/status', [WaiterController::class, 'tableBoardStatus'])->name('tables.status');
         Route::post('/order/create', [WaiterController::class, 'createOrder'])->name('create-order');
         Route::get('/orders', [WaiterController::class, 'myOrders'])->name('orders');
         Route::get('/orders/{id}', [WaiterController::class, 'orderDetails'])->name('order-details');

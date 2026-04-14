@@ -47,6 +47,7 @@
                 <th>Contado</th>
                 <th>Diferencia</th>
                 <th>Fechas</th>
+                <th>Observaciones</th>
             </tr>
         </thead>
         <tbody>
@@ -63,10 +64,22 @@
                     Apertura: {{ $session->opened_at?->format('d/m/Y H:i') }}<br>
                     Cierre: {{ $session->closed_at?->format('d/m/Y H:i') ?? '-' }}
                 </td>
+                <td>
+                    @if($session->opening_note || $session->closing_note)
+                        @if($session->opening_note)
+                            <strong>Apertura:</strong> {{ $session->opening_note }}<br>
+                        @endif
+                        @if($session->closing_note)
+                            <strong>Cierre:</strong> {{ $session->closing_note }}
+                        @endif
+                    @else
+                        -
+                    @endif
+                </td>
             </tr>
             @empty
             <tr>
-                <td colspan="8">No hay sesiones para mostrar.</td>
+                <td colspan="9">No hay sesiones para mostrar.</td>
             </tr>
             @endforelse
         </tbody>

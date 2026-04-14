@@ -240,6 +240,7 @@
     <script>
         const returnUrl = @json($returnUrl ?? route('waiter.orders'));
         const autoCloseAfterPrint = @json($autoCloseAfterPrint ?? false);
+        const markPrintedStorageKey = @json($markPrintedStorageKey ?? null);
         let hasHandledPrintReturn = false;
 
         function returnAfterPrint() {
@@ -265,6 +266,9 @@
 
         document.getElementById('printKitchenTicket')?.addEventListener('click', function () {
             hasHandledPrintReturn = false;
+            if (markPrintedStorageKey) {
+                localStorage.setItem(markPrintedStorageKey, '1');
+            }
             window.print();
         });
 

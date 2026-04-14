@@ -99,7 +99,7 @@
                         <td>{{ $order->payment_method === 'cash' ? 'Efectivo' : ($order->payment_method === 'mixed' ? 'Efectivo + QR' : 'QR') }}</td>
                         <td><strong class="text-success">Bs. {{ number_format($order->total, 2) }}</strong></td>
                         <td>
-                            <a href="{{ route('cashier.print-receipt', $order->id) }}" 
+                            <a href="{{ route('cashier.print-receipt', array_merge(['id' => $order->id, 'from' => 'sales'], request()->only(['date_from', 'date_to', 'page']))) }}" 
                                class="btn btn-sm btn-primary">
                                 <i class="fas fa-print"></i>
                             </a>

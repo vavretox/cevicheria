@@ -36,6 +36,36 @@ class WaiterController extends Controller
         return view('waiter.dashboard', compact('categories', 'pendingOrders', 'availableTables', 'tableBoard'));
     }
 
+    public function tableBoardStatus(OrderWorkflowService $workflow)
+    {
+        $tableBoard = $workflow->getTableBoard();
+        $selectableTableIds = $workflow->getSelectableTables()
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return response()->json([
+            'has_selectable_tables' => !empty($selectableTableIds),
+            'tables' => $tableBoard->map(function (DiningTable $table) use ($selectableTableIds) {
+                return [
+                    'id' => (int) $table->id,
+                    'name' => $table->merged_display_name,
+                    'status' => $table->ui_status,
+                    'selectable' => in_array((int) $table->id, $selectableTableIds, true),
+                    'combined_capacity' => $table->combined_capacity,
+                    'zone' => $table->zone,
+                    'has_merged_children' => $table->hasMergedChildren(),
+                    'merged_members' => $table->merged_members->pluck('name')->values()->all(),
+                    'reservation_name' => $table->isReserved() ? $table->reservation_name : null,
+                    'reservation_at_label' => $table->isReserved() && $table->reservation_at
+                        ? $table->reservation_at->format('d/m H:i')
+                        : null,
+                    'group_reservation_summary' => $table->group_reservation_summary,
+                ];
+            })->values(),
+        ]);
+    }
+
     public function createOrder(Request $request, OrderWorkflowService $workflow)
     {
         $request->validate([

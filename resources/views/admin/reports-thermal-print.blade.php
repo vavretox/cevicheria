@@ -100,6 +100,33 @@
             text-align: center;
             font-size: 12px;
         }
+
+        .no-print {
+            text-align: center;
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .no-print button,
+        .no-print a {
+            padding: 10px 14px;
+            border: none;
+            border-radius: 8px;
+            background: #2c3e50;
+            color: #fff;
+            cursor: pointer;
+            font: inherit;
+            text-decoration: none;
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .no-print .back-link {
+            background: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -150,8 +177,9 @@
         <div>Impresión térmica</div>
     </div>
 
-    <div class="center no-print" style="margin-top: 16px;">
-        <button onclick="window.print()">Imprimir</button>
+    <div class="no-print">
+        <button type="button" onclick="window.print()">Imprimir</button>
+        <a href="{{ $returnUrl ?? route('admin.reports') }}" class="back-link">Volver</a>
     </div>
 </body>
 </html>

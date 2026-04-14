@@ -77,6 +77,34 @@ class CashierController extends Controller
         return view('cashier.dashboard', compact('pendingOrders', 'todayOrders', 'todaySales', 'products', 'waiters', 'availableTables', 'tableBoard', 'currentCashSession'));
     }
 
+    public function tableBoardStatus(OrderWorkflowService $workflow)
+    {
+        $tableBoard = $workflow->getTableBoard();
+        $selectableTableIds = $workflow->getSelectableTables()
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return response()->json([
+            'has_selectable_tables' => !empty($selectableTableIds),
+            'tables' => $tableBoard->map(function (DiningTable $table) use ($selectableTableIds) {
+                return [
+                    'id' => (int) $table->id,
+                    'name' => $table->merged_display_name,
+                    'status' => $table->ui_status,
+                    'selectable' => in_array((int) $table->id, $selectableTableIds, true),
+                    'combined_capacity' => $table->combined_capacity,
+                    'zone' => $table->zone,
+                    'reservation_name' => $table->isReserved() ? $table->reservation_name : null,
+                    'reservation_at_label' => $table->isReserved() && $table->reservation_at
+                        ? $table->reservation_at->format('d/m H:i')
+                        : null,
+                    'group_reservation_summary' => $table->group_reservation_summary,
+                ];
+            })->values(),
+        ]);
+    }
+
     public function stock()
     {
         $categories = Category::query()
@@ -495,7 +523,7 @@ class CashierController extends Controller
                 'message' => 'Pedido creado exitosamente',
                 'order_id' => $order->id,
                 'display_number' => $order->display_number,
-                'print_kitchen_url' => route('cashier.print-kitchen-order', $order->id),
+                'print_kitchen_url' => route('cashier.print-kitchen-order', ['id' => $order->id, 'from' => 'quick-order']),
             ]);
         } catch (\Exception $e) {
             Log::error('Error al crear pedido (caja)', ['error' => $e->getMessage(), 'payload' => $request->all()]);
@@ -504,6 +532,87 @@ class CashierController extends Controller
                 'message' => 'Error al crear el pedido: ' . $e->getMessage(),
             ], $e instanceof \RuntimeException ? 422 : 500);
         }
+    }
+
+    public function storeQuickOrderPrintPreview(Request $request)
+    {
+        $validated = $request->validate([
+            'table_id' => 'nullable|integer|exists:tables,id',
+            'waiter_id' => 'required|exists:users,id',
+            'items' => 'required|array',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.notes' => 'nullable|string',
+            'items.*.service_type' => 'nullable|in:dine_in,takeaway',
+        ]);
+
+        session([
+            'cashier_quick_order_print_preview' => [
+                'table_id' => $validated['table_id'] ?? null,
+                'waiter_id' => $validated['waiter_id'],
+                'items' => $validated['items'],
+                'created_at' => now()->toIso8601String(),
+            ],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'url' => route('cashier.quick-order.print-preview'),
+        ]);
+    }
+
+    public function quickOrderPrintPreview()
+    {
+        $payload = session('cashier_quick_order_print_preview');
+
+        if (!$payload) {
+            return redirect()->route('cashier.dashboard')
+                ->with('error', 'No hay un pedido rapido listo para imprimir.');
+        }
+
+        $waiter = User::findOrFail($payload['waiter_id']);
+        $table = !empty($payload['table_id'])
+            ? DiningTable::find($payload['table_id'])
+            : null;
+        $products = Product::with('category')
+            ->whereIn('id', collect($payload['items'])->pluck('product_id')->unique()->values())
+            ->get()
+            ->keyBy('id');
+
+        $foodItems = collect($payload['items'])->map(function ($item) use ($products) {
+            $product = $products->get((int) ($item['product_id'] ?? 0));
+
+            if (!$product || $product->isBeverage()) {
+                return null;
+            }
+
+            return (object) [
+                'product' => $product,
+                'quantity' => (int) ($item['quantity'] ?? 0),
+                'notes' => $item['notes'] ?? null,
+                'service_type' => $item['service_type'] ?? 'dine_in',
+                'service_type_label' => ($item['service_type'] ?? 'dine_in') === 'takeaway' ? 'Para llevar' : 'En mesa',
+            ];
+        })->filter()->values();
+
+        $order = (object) [
+            'display_number' => 'PREVIA',
+            'table_label' => $table?->merged_display_name ?? 'Delivery',
+            'user' => (object) ['name' => $waiter->name],
+        ];
+
+        return view('waiter.print-order', [
+            'order' => $order,
+            'foodItems' => $foodItems,
+            'printLabel' => 'PEDIDO RAPIDO',
+            'printedAt' => now(),
+            'scope' => 'main',
+            'printReference' => 'PREVIA',
+            'autoCloseAfterPrint' => false,
+            'returnUrl' => route('cashier.dashboard'),
+            'markPrintedStorageKey' => 'cashierQuickOrderPrinted',
+        ]);
     }
 
     public function updateOrderItems(Request $request, $id, OrderWorkflowService $workflow)
@@ -545,7 +654,7 @@ class CashierController extends Controller
         }
     }
 
-    public function printKitchenOrder($id, KitchenPrintService $kitchenPrint, $scope = 'main')
+    public function printKitchenOrder(Request $request, $id, KitchenPrintService $kitchenPrint, $scope = 'main')
     {
         $order = Order::with(['user', 'details.product.category', 'audits.user'])
             ->findOrFail($id);
@@ -563,7 +672,9 @@ class CashierController extends Controller
             [
                 'order' => $order,
                 'autoCloseAfterPrint' => false,
-                'returnUrl' => route('cashier.show-order', $order->id),
+                'returnUrl' => $request->query('from') === 'quick-order'
+                    ? route('cashier.dashboard')
+                    : route('cashier.show-order', $order->id),
             ],
             $payload
         ));
@@ -996,11 +1107,13 @@ class CashierController extends Controller
         return $waiter->isDeliveryWaiter();
     }
 
-    public function printReceipt($id)
+    public function printReceipt(Request $request, $id)
     {
         $order = Order::with(['user', 'cashier', 'details.product'])
             ->findOrFail($id);
-        $returnUrl = route('cashier.show-order', $order->id);
+        $returnUrl = $request->query('from') === 'sales'
+            ? route('cashier.sales', $request->only(['date_from', 'date_to', 'page']))
+            : route('cashier.show-order', $order->id);
 
         return view('cashier.receipt', compact('order', 'returnUrl'));
     }

@@ -92,6 +92,7 @@
                         <th>Contado</th>
                         <th>Diferencia</th>
                         <th>Fechas</th>
+                        <th>Observaciones</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -114,10 +115,22 @@
                             <div><small>Apertura: {{ $session->opened_at?->format('d/m/Y H:i') }}</small></div>
                             <div><small>Cierre: {{ $session->closed_at?->format('d/m/Y H:i') ?? '-' }}</small></div>
                         </td>
+                        <td>
+                            @if($session->opening_note || $session->closing_note)
+                                @if($session->opening_note)
+                                    <div><small><strong>Apertura:</strong> {{ $session->opening_note }}</small></div>
+                                @endif
+                                @if($session->closing_note)
+                                    <div><small><strong>Cierre:</strong> {{ $session->closing_note }}</small></div>
+                                @endif
+                            @else
+                                <span class="text-muted">-</span>
+                            @endif
+                        </td>
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No hay sesiones de caja para mostrar.</td>
+                        <td colspan="9" class="text-center text-muted py-4">No hay sesiones de caja para mostrar.</td>
                     </tr>
                     @endforelse
                 </tbody>

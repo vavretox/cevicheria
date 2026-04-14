@@ -111,15 +111,28 @@
         .no-print {
             text-align: center;
             margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
-        .no-print button {
+        .no-print button,
+        .no-print a {
             padding: 10px 14px;
             border: none;
             border-radius: 8px;
             background: #2c3e50;
             color: #fff;
             cursor: pointer;
+            font: inherit;
+            text-decoration: none;
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .no-print .back-link {
+            background: #6c757d;
         }
 
         @media print {
@@ -221,14 +234,15 @@
 
         <div class="no-print">
             <button type="button" id="printKitchenTicket">Imprimir</button>
+            <a href="{{ $returnUrl ?? route('waiter.orders') }}" class="back-link">Volver</a>
         </div>
     </div>
     <script>
-        const waiterDashboardUrl = @json(route('waiter.dashboard'));
+        const returnUrl = @json($returnUrl ?? route('waiter.orders'));
         const autoCloseAfterPrint = @json($autoCloseAfterPrint ?? false);
         let hasHandledPrintReturn = false;
 
-        function returnToWaiterDashboard() {
+        function returnAfterPrint() {
             if (hasHandledPrintReturn) {
                 return;
             }
@@ -237,7 +251,7 @@
 
             if (window.opener && !window.opener.closed) {
                 try {
-                    window.opener.location = waiterDashboardUrl;
+                    window.opener.location = returnUrl;
                     window.opener.focus();
                     window.close();
                     return;
@@ -246,7 +260,7 @@
                 }
             }
 
-            window.location.href = waiterDashboardUrl;
+            window.location.href = returnUrl;
         }
 
         document.getElementById('printKitchenTicket')?.addEventListener('click', function () {
@@ -255,7 +269,7 @@
         });
 
         if (autoCloseAfterPrint) {
-            window.addEventListener('afterprint', returnToWaiterDashboard);
+            window.addEventListener('afterprint', returnAfterPrint);
         }
     </script>
 </body>

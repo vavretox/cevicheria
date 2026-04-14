@@ -30,8 +30,6 @@
     </a>
 </div>
 
-<div class="toast-container position-fixed top-0 end-0 p-3" id="waiterOrdersToastContainer" style="z-index: 1100;"></div>
-
 <div class="card mb-3">
     <div class="card-body py-2">
         <div class="d-flex flex-wrap gap-2">
@@ -108,19 +106,17 @@
                                     onclick="viewOrderDetails({{ $order->id }})">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button type="button"
+                            <a href="{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'main']) }}"
                                class="btn btn-sm btn-outline-primary"
-                               title="Imprimir pedido principal"
-                               onclick="directPrintOrder('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'main']) }}')">
+                               title="Imprimir pedido principal">
                                 <i class="fas fa-print"></i>
-                            </button>
+                            </a>
                             @if($order->can_print_added)
-                                <button type="button"
+                                <a href="{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'added']) }}"
                                    class="btn btn-sm btn-outline-secondary"
-                                   title="Imprimir últimos agregados"
-                                   onclick="directPrintOrder('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'added']) }}')">
+                                   title="Imprimir últimos agregados">
                                     <i class="fas fa-layer-group"></i>
-                                </button>
+                                </a>
                             @endif
                             @if($order->status === 'pending')
                             <form action="{{ route('waiter.cancel-order', $order->id) }}" 
@@ -189,17 +185,15 @@
                         <button class="btn btn-info btn-sm" onclick="viewOrderDetails({{ $order->id }})">
                             <i class="fas fa-eye me-1"></i>Ver detalle
                         </button>
-                        <button type="button"
-                           class="btn btn-outline-primary btn-sm"
-                           onclick="directPrintOrder('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'main']) }}')">
+                        <a href="{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'main']) }}"
+                           class="btn btn-outline-primary btn-sm">
                             <i class="fas fa-print me-1"></i>Imprimir principal
-                        </button>
+                        </a>
                         @if($order->can_print_added)
-                            <button type="button"
-                               class="btn btn-outline-secondary btn-sm"
-                               onclick="directPrintOrder('{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'added']) }}')">
+                            <a href="{{ route('waiter.print-order', ['id' => $order->id, 'scope' => 'added']) }}"
+                               class="btn btn-outline-secondary btn-sm">
                                 <i class="fas fa-layer-group me-1"></i>Imprimir agregados
-                            </button>
+                            </a>
                         @endif
                         @if($order->status === 'pending')
                             <form action="{{ route('waiter.cancel-order', $order->id) }}" method="POST">
@@ -311,7 +305,6 @@
     </div>
 </div>
 
-<iframe id="orderPrintFrame" title="Ticket de impresión" class="d-none"></iframe>
 @endsection
 
 @section('styles')
@@ -348,11 +341,6 @@ let currentOrder = null;
 let currentItems = [];
 let pendingFoodProduct = null;
 const foodNotesModal = new bootstrap.Modal(document.getElementById('foodNotesModal'));
-const orderPrintFrame = document.getElementById('orderPrintFrame');
-let currentOrderPrintUrl = '';
-let orderPrintLoaded = false;
-let orderPrintLoadTimeoutId = null;
-let shouldAutoPrintOrder = false;
 
 function createCurrentItemKey(productId, notes = '', serviceType = 'dine_in') {
     return orderEditorUtils.buildItemSignature(productId, notes, serviceType);
@@ -699,23 +687,6 @@ $('#foodNotesModal').on('hidden.bs.modal', function() {
     resetFoodNotesModal();
 });
 
-if (orderPrintFrame) {
-    orderPrintFrame.addEventListener('load', function() {
-        orderPrintLoaded = true;
-        clearOrderPrintLoadTimeout();
-
-        if (shouldAutoPrintOrder) {
-            setTimeout(function() {
-                printOrderTicket(true);
-            }, 200);
-        }
-    });
-
-    orderPrintFrame.addEventListener('error', function() {
-        handleOrderPrintLoadError();
-    });
-}
-
 $('.food-note-input').on('change', function() {
     const isComplete = this.value === 'COMPLETO';
 
@@ -785,98 +756,6 @@ function viewOrderDetails(orderId) {
     });
 }
 
-function directPrintOrder(printUrl) {
-    currentOrderPrintUrl = printUrl;
-    orderPrintLoaded = false;
-    shouldAutoPrintOrder = true;
-    startOrderPrintLoadTimeout();
-    if (orderPrintFrame) {
-        orderPrintFrame.src = printUrl;
-    }
-    showToast('info', 'Preparando ticket para impresión...');
-}
-
-function printOrderTicket(isAuto = false) {
-    if (!orderPrintFrame || !orderPrintFrame.contentWindow || !orderPrintLoaded) {
-        if (!isAuto) {
-            showToast('warning', 'La vista de impresión aún no está lista.');
-        }
-        return;
-    }
-
-    try {
-        orderPrintFrame.contentWindow.focus();
-        orderPrintFrame.contentWindow.print();
-        shouldAutoPrintOrder = false;
-
-        if (isAuto) {
-            showToast('info', 'Se abrió la impresión del ticket de cocina.');
-        }
-    } catch (error) {
-        if (isAuto) {
-            showToast('warning', 'No se pudo abrir la impresión automática del ticket.');
-        } else {
-            showToast('danger', 'No se pudo abrir la impresión.');
-        }
-    }
-}
-
-function startOrderPrintLoadTimeout() {
-    clearOrderPrintLoadTimeout();
-    orderPrintLoadTimeoutId = setTimeout(function() {
-        if (!orderPrintLoaded) {
-            handleOrderPrintLoadError();
-        }
-    }, 8000);
-}
-
-function clearOrderPrintLoadTimeout() {
-    if (orderPrintLoadTimeoutId) {
-        clearTimeout(orderPrintLoadTimeoutId);
-        orderPrintLoadTimeoutId = null;
-    }
-}
-
-function handleOrderPrintLoadError() {
-    clearOrderPrintLoadTimeout();
-    shouldAutoPrintOrder = false;
-    showToast('warning', 'No se pudo cargar la vista de impresión del pedido.');
-}
-
-function showToast(type, message) {
-    const container = document.getElementById('waiterOrdersToastContainer');
-    if (!container) {
-        return;
-    }
-
-    const toneMap = {
-        success: 'text-bg-success',
-        danger: 'text-bg-danger',
-        warning: 'text-bg-warning',
-        info: 'text-bg-info',
-    };
-
-    const toastEl = document.createElement('div');
-    toastEl.className = `toast align-items-center border-0 ${toneMap[type] || 'text-bg-secondary'}`;
-    toastEl.setAttribute('role', 'alert');
-    toastEl.setAttribute('aria-live', 'assertive');
-    toastEl.setAttribute('aria-atomic', 'true');
-    toastEl.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">${message}</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
-        </div>
-    `;
-
-    container.appendChild(toastEl);
-
-    const toast = new bootstrap.Toast(toastEl, { delay: 3500 });
-    toast.show();
-
-    toastEl.addEventListener('hidden.bs.toast', function() {
-        toastEl.remove();
-    });
-}
 </script>
 @endsection
 

@@ -563,6 +563,7 @@ class CashierController extends Controller
             [
                 'order' => $order,
                 'autoCloseAfterPrint' => false,
+                'returnUrl' => route('cashier.show-order', $order->id),
             ],
             $payload
         ));
@@ -999,8 +1000,9 @@ class CashierController extends Controller
     {
         $order = Order::with(['user', 'cashier', 'details.product'])
             ->findOrFail($id);
+        $returnUrl = route('cashier.show-order', $order->id);
 
-        return view('cashier.receipt', compact('order'));
+        return view('cashier.receipt', compact('order', 'returnUrl'));
     }
 
     public function downloadReceipt($id)

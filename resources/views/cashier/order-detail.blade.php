@@ -278,16 +278,12 @@
                 </div>
                 <div class="mt-3 d-flex justify-content-end flex-wrap gap-2">
                     <a href="{{ route('cashier.print-kitchen-order', ['id' => $order->id, 'scope' => 'main']) }}"
-                       class="btn btn-outline-primary btn-sm"
-                       target="_blank"
-                       rel="noopener">
+                       class="btn btn-outline-primary btn-sm">
                         <i class="fas fa-print me-1"></i>Imprimir cocina
                     </a>
                     @if($canPrintAdded)
                         <a href="{{ route('cashier.print-kitchen-order', ['id' => $order->id, 'scope' => 'added']) }}"
-                           class="btn btn-outline-secondary btn-sm"
-                           target="_blank"
-                           rel="noopener">
+                           class="btn btn-outline-secondary btn-sm">
                             <i class="fas fa-layer-group me-1"></i>Imprimir recién agregados
                         </a>
                     @else
@@ -379,9 +375,7 @@
                         </div>
                     </div>
                     <a href="{{ route('cashier.print-receipt', $order->id) }}"
-                       class="btn btn-outline-primary w-100 mb-2"
-                       target="_blank"
-                       rel="noopener">
+                       class="btn btn-outline-primary w-100 mb-2">
                         <i class="fas fa-print me-2"></i>Imprimir
                     </a>
                     <button type="submit" class="btn btn-success w-100 mb-2">

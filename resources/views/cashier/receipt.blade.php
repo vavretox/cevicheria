@@ -106,6 +106,33 @@
         .text-center {
             text-align: center;
         }
+
+        .no-print {
+            text-align: center;
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .no-print button,
+        .no-print a {
+            padding: 10px 14px;
+            border: none;
+            border-radius: 8px;
+            background: #2c3e50;
+            color: #fff;
+            cursor: pointer;
+            font: inherit;
+            text-decoration: none;
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .no-print .back-link {
+            background: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -170,17 +197,9 @@
         </div>
     </div>
 
-    <!-- Botones de Acción -->
-    <div class="text-center mt-4 no-print">
-        <button onclick="window.print()" class="btn btn-primary me-2">
-            <i class="fas fa-print"></i> Imprimir
-        </button>
-        <a href="{{ route('cashier.download-receipt', $order->id) }}" class="btn btn-success me-2">
-            <i class="fas fa-download"></i> Descargar PDF
-        </a>
-        <a href="{{ route('cashier.dashboard') }}" class="btn btn-secondary">
-            <i class="fas fa-arrow-left"></i> Volver
-        </a>
+    <div class="no-print">
+        <button type="button" onclick="window.print()">Imprimir</button>
+        <a href="{{ $returnUrl ?? route('cashier.dashboard') }}" class="back-link">Volver</a>
     </div>
 
     <script src="https://kit.fontawesome.com/your-code.js"></script>

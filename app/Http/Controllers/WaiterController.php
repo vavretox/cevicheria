@@ -176,6 +176,7 @@ class WaiterController extends Controller
         return view('waiter.print-order', array_merge([
             'order' => $order,
             'autoCloseAfterPrint' => false,
+            'returnUrl' => route('waiter.orders'),
         ], $payload));
     }
 

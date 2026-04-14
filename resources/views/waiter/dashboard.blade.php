@@ -658,15 +658,13 @@
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                     Cancelar
                 </button>
-                <button type="button" class="btn btn-success" id="confirmOrderPrint">
-                    <i class="fas fa-print me-1"></i>Imprimir
+                <button type="button" class="btn btn-success" id="confirmOrderSend">
+                    <i class="fas fa-paper-plane me-1"></i>Enviar pedido
                 </button>
             </div>
         </div>
     </div>
 </div>
-
-<iframe id="kitchenPrintFrame" title="Comanda de cocina" class="d-none"></iframe>
 
 <div class="toast-container position-fixed top-0 end-0 p-3" id="appToastContainer" style="z-index: 1100;"></div>
 @endsection
@@ -676,15 +674,11 @@
 let orderItems = [];
 let pendingFoodProduct = null;
 let isSubmittingOrder = false;
-let shouldReloadAfterKitchenModalClose = false;
-let currentKitchenPrintUrl = '';
-let kitchenFrameLoaded = false;
-let kitchenLoadTimeoutId = null;
-let shouldAutoPrintKitchen = false;
+let waiterHasSelectableTables = {{ $availableTables->isEmpty() ? 'false' : 'true' }};
+let waiterTableRefreshTimeoutId = null;
 const cevicheOptionsModal = new bootstrap.Modal(document.getElementById('cevicheOptionsModal'));
 const tablePickerModal = new bootstrap.Modal(document.getElementById('tablePickerModal'));
 const confirmOrderModal = new bootstrap.Modal(document.getElementById('confirmOrderModal'));
-const kitchenPrintFrame = document.getElementById('kitchenPrintFrame');
 
 function createOrderItemKey(productId, notes = '', serviceType = 'dine_in') {
     return `${productId}::${String(notes || '').trim().toLowerCase()}::${serviceType}`;
@@ -716,17 +710,7 @@ $(document).ready(function() {
         handleProductSelection(productId, productName, productPrice, categoryCode, isCeviche);
     });
 
-    $('#tableBoard .table-card').on('click', function() {
-        if ($(this).data('selectable') !== 1 && $(this).data('selectable') !== '1') {
-            return;
-        }
-
-        $('#tableBoard .table-card').removeClass('selected');
-        $(this).addClass('selected');
-        $('#tableSelect').val($(this).data('table-id'));
-        $('#selectedTableLabel').text($(this).data('table-name'));
-        tablePickerModal.hide();
-    });
+    bindWaiterTableBoardEvents();
 
     $('#confirmCevicheOptions').click(function() {
         if (!pendingFoodProduct) {
@@ -754,29 +738,12 @@ $(document).ready(function() {
         openConfirmOrderModal();
     });
 
-    $('#confirmOrderPrint').click(function() {
+    $('#confirmOrderSend').click(function() {
         if (isSubmittingOrder) {
             return;
         }
-        submitOrderAndPrint();
+        submitOrder();
     });
-
-    if (kitchenPrintFrame) {
-        kitchenPrintFrame.addEventListener('load', function() {
-            kitchenFrameLoaded = true;
-            clearKitchenLoadTimeout();
-
-            if (shouldAutoPrintKitchen) {
-                setTimeout(function() {
-                    printKitchenTicket(true);
-                }, 200);
-            }
-        });
-
-        kitchenPrintFrame.addEventListener('error', function() {
-            handleKitchenFrameLoadError();
-        });
-    }
 
     // Limpiar pedido
     $('#clearOrder').click(function() {
@@ -817,7 +784,112 @@ $(document).ready(function() {
     });
 
     updateStickyCartSummary();
+    scheduleWaiterTableRefresh();
 });
+
+function syncWaiterSendButtons() {
+    const hasItems = orderItems.length > 0;
+    const disabled = !hasItems || !waiterHasSelectableTables;
+    $('#sendOrder').prop('disabled', disabled);
+    $('#mobileSendOrder').prop('disabled', disabled);
+}
+
+function bindWaiterTableBoardEvents() {
+    $('#tableBoard .table-card').off('click').on('click', function() {
+        if ($(this).data('selectable') !== 1 && $(this).data('selectable') !== '1') {
+            return;
+        }
+
+        $('#tableBoard .table-card').removeClass('selected');
+        $(this).addClass('selected');
+        $('#tableSelect').val($(this).data('table-id'));
+        $('#selectedTableLabel').text($(this).data('table-name'));
+        tablePickerModal.hide();
+    });
+}
+
+function renderWaiterTableCard(table, selectedTableId) {
+    const selectable = Boolean(table.selectable);
+    const statusLabels = {
+        available: 'Libre',
+        reserved: 'Reservada',
+        occupied: 'Ocupada',
+        closed: 'Cerrada',
+    };
+    const isSelected = Number(selectedTableId || 0) === Number(table.id);
+    const mergedBadges = table.has_merged_children
+        ? `
+            <div class="mb-1">
+                <span class="merge-badge"><i class="fas fa-object-group"></i>Fusionada</span>
+            </div>
+            <div class="merge-members">
+                ${(table.merged_members || []).map(member => `<span class="merge-chip">${member}</span>`).join('')}
+            </div>
+        `
+        : '';
+    const reservationMarkup = table.reservation_name
+        ? `
+            <div class="small text-muted">${table.reservation_name}</div>
+            ${table.reservation_at_label ? `<div class="small text-muted">${table.reservation_at_label}</div>` : ''}
+        `
+        : (table.group_reservation_summary ? `<div class="small text-muted">${table.group_reservation_summary}</div>` : '');
+
+    return `
+        <button
+            type="button"
+            class="table-card ${table.status} ${selectable ? '' : 'is-disabled'} ${isSelected ? 'selected' : ''}"
+            data-table-id="${table.id}"
+            data-table-name="${table.name}"
+            data-selectable="${selectable ? '1' : '0'}"
+        >
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <strong>${table.name}</strong>
+                <span class="table-card-status">${statusLabels[table.status] || 'Libre'}</span>
+            </div>
+            <div class="small text-muted mb-1">Capacidad total: ${table.combined_capacity || '-'}</div>
+            ${table.zone ? `<div class="small text-muted mb-1">${table.zone}</div>` : ''}
+            ${mergedBadges}
+            ${reservationMarkup}
+        </button>
+    `;
+}
+
+function refreshWaiterTableBoard() {
+    fetch(@json(route('waiter.tables.status')), {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+    })
+        .then(response => response.ok ? response.json() : Promise.reject(new Error('refresh_failed')))
+        .then(data => {
+            waiterHasSelectableTables = Boolean(data.has_selectable_tables);
+            const selectedTableId = $('#tableSelect').val();
+            const selectedTable = (data.tables || []).find(table => Number(table.id) === Number(selectedTableId));
+
+            $('#tableBoard').html((data.tables || []).map(table => renderWaiterTableCard(table, selectedTableId)).join(''));
+            bindWaiterTableBoardEvents();
+
+            if (!selectedTable || !selectedTable.selectable) {
+                $('#tableSelect').val('');
+                $('#selectedTableLabel').text('Ninguna mesa seleccionada');
+            } else {
+                $('#selectedTableLabel').text(selectedTable.name);
+            }
+
+            syncWaiterSendButtons();
+            updateStickyCartSummary();
+        })
+        .catch(() => {})
+        .finally(() => {
+            scheduleWaiterTableRefresh();
+        });
+}
+
+function scheduleWaiterTableRefresh() {
+    clearTimeout(waiterTableRefreshTimeoutId);
+    waiterTableRefreshTimeoutId = setTimeout(refreshWaiterTableBoard, 8000);
+}
 
 function filterProducts(searchTerm) {
     const normalizedTerm = String(searchTerm || '').trim().toLowerCase();
@@ -1057,14 +1129,12 @@ function renderOrderItems() {
                 <p>Selecciona productos para comenzar</p>
             </div>
         `);
-        $('#sendOrder').prop('disabled', true);
-        $('#mobileSendOrder').prop('disabled', true);
+        syncWaiterSendButtons();
         updateStickyCartSummary();
         return;
     }
 
-    $('#sendOrder').prop('disabled', false);
-    $('#mobileSendOrder').prop('disabled', false);
+    syncWaiterSendButtons();
     let html = '';
 
     orderItems.forEach(item => {
@@ -1122,7 +1192,7 @@ function updateTotals() {
 function updateStickyCartSummary() {
     const itemsCount = orderItems.reduce((sum, item) => sum + item.quantity, 0);
     $('#mobileItemsCount').text(itemsCount);
-    $('#mobileSendOrder').prop('disabled', itemsCount === 0 || {{ $availableTables->isEmpty() ? 'true' : 'false' }});
+    $('#mobileSendOrder').prop('disabled', itemsCount === 0 || !waiterHasSelectableTables);
 }
 
 function openConfirmOrderModal() {
@@ -1173,7 +1243,7 @@ function renderConfirmOrderSummary() {
     $('#confirmOrderItems').html(itemsHtml);
 }
 
-function submitOrderAndPrint() {
+function submitOrder() {
     if (isSubmittingOrder) {
         return;
     }
@@ -1191,21 +1261,9 @@ function submitOrderAndPrint() {
             items: orderItems
         },
         success: function(response) {
-            const printUrl = '{{ route("waiter.print-order", ["id" => "__ORDER_ID__", "scope" => "main"]) }}'
-                .replace('__ORDER_ID__', response.order_id);
-
-            shouldReloadAfterKitchenModalClose = true;
-            kitchenFrameLoaded = false;
-            currentKitchenPrintUrl = printUrl;
-            shouldAutoPrintKitchen = true;
-            startKitchenLoadTimeout();
-            if (kitchenPrintFrame) {
-                kitchenPrintFrame.src = printUrl;
-            }
-
             confirmOrderModal.hide();
             clearOrder();
-            showToast('success', 'Pedido creado. Preparando impresión de cocina...');
+            showToast('success', 'Pedido creado exitosamente. Puedes imprimirlo desde Mis pedidos.');
         },
         error: function(xhr) {
             showToast('danger', 'Error al crear el pedido: ' + (xhr.responseJSON?.message || 'Error desconocido'));
@@ -1214,42 +1272,10 @@ function submitOrderAndPrint() {
             isSubmittingOrder = false;
             setSubmittingState(false);
             if (orderItems.length > 0) {
-                $('#sendOrder').prop('disabled', false);
-                $('#mobileSendOrder').prop('disabled', false);
+                syncWaiterSendButtons();
             }
         }
     });
-}
-
-function printKitchenTicket(isAuto = false) {
-    if (!kitchenPrintFrame || !kitchenPrintFrame.contentWindow || !kitchenFrameLoaded) {
-        if (!isAuto) {
-            showToast('warning', 'La comanda aún no está lista. Intenta nuevamente.');
-        }
-        return;
-    }
-
-    try {
-        kitchenPrintFrame.contentWindow.focus();
-        kitchenPrintFrame.contentWindow.print();
-        shouldAutoPrintKitchen = false;
-        if (isAuto) {
-            showToast('info', 'Se abrió la impresión automática de cocina.');
-        }
-
-        if (shouldReloadAfterKitchenModalClose) {
-            shouldReloadAfterKitchenModalClose = false;
-            setTimeout(function() {
-                location.reload();
-            }, 1200);
-        }
-    } catch (error) {
-        if (isAuto) {
-            showToast('warning', 'No se pudo abrir la impresión automática de cocina.');
-        } else {
-            showToast('danger', 'No se pudo abrir la impresión.');
-        }
-    }
 }
 
 function clearOrder() {
@@ -1264,38 +1290,16 @@ function clearOrder() {
 
 function setSubmittingState(isLoading) {
     if (isLoading) {
-        $('#confirmOrderPrint')
+        $('#confirmOrderSend')
             .prop('disabled', true)
             .html('<i class="fas fa-spinner fa-spin me-1"></i>Enviando...');
         $('#sendOrder, #mobileSendOrder').prop('disabled', true);
         return;
     }
 
-    $('#confirmOrderPrint')
+    $('#confirmOrderSend')
         .prop('disabled', false)
-        .html('<i class="fas fa-print me-1"></i>Imprimir');
-}
-
-function startKitchenLoadTimeout() {
-    clearKitchenLoadTimeout();
-    kitchenLoadTimeoutId = setTimeout(function() {
-        if (!kitchenFrameLoaded) {
-            handleKitchenFrameLoadError();
-        }
-    }, 8000);
-}
-
-function clearKitchenLoadTimeout() {
-    if (kitchenLoadTimeoutId) {
-        clearTimeout(kitchenLoadTimeoutId);
-        kitchenLoadTimeoutId = null;
-    }
-}
-
-function handleKitchenFrameLoadError() {
-    clearKitchenLoadTimeout();
-    shouldAutoPrintKitchen = false;
-    showToast('warning', 'No se pudo cargar la vista de impresión de cocina.');
+        .html('<i class="fas fa-paper-plane me-1"></i>Enviar pedido');
 }
 
 function showToast(type, message) {

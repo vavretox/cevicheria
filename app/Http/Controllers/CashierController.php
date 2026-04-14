@@ -458,7 +458,7 @@ class CashierController extends Controller
 
             DB::commit();
 
-            return redirect()->route('cashier.print-receipt', $order->id)
+            return redirect()->route('cashier.show-order', $order->id)
                 ->with('success', 'Orden procesada exitosamente');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -562,7 +562,7 @@ class CashierController extends Controller
         return view('waiter.print-order', array_merge(
             [
                 'order' => $order,
-                'autoCloseAfterPrint' => true,
+                'autoCloseAfterPrint' => false,
             ],
             $payload
         ));

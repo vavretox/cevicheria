@@ -234,7 +234,7 @@
                                 </td>
                                 @if($order->status === 'pending')
                                 <td class="text-end align-middle">
-                                    <button class="btn btn-sm btn-outline-danger remove-item"
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-item"
                                             data-item-key="detail-{{ $detail->id }}">
                                         <i class="fas fa-trash"></i>
                                     </button>
@@ -271,19 +271,31 @@
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <button class="btn btn-sm btn-primary w-100" id="addProductBtn">
+                        <button type="button" class="btn btn-sm btn-primary w-100" id="addProductBtn">
                             <i class="fas fa-plus me-1"></i>Agregar
                         </button>
                     </div>
                 </div>
                 <div class="mt-3 d-flex justify-content-end flex-wrap gap-2">
-                    <button type="button" class="btn btn-outline-primary btn-sm" id="printKitchenMainBtn">
+                    <a href="{{ route('cashier.print-kitchen-order', ['id' => $order->id, 'scope' => 'main']) }}"
+                       class="btn btn-outline-primary btn-sm"
+                       target="_blank"
+                       rel="noopener">
                         <i class="fas fa-print me-1"></i>Imprimir cocina
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="printKitchenAddedBtn" {{ $canPrintAdded ? '' : 'disabled' }}>
-                        <i class="fas fa-layer-group me-1"></i>Imprimir recién agregados
-                    </button>
-                    <button class="btn btn-success btn-sm" id="saveOrderChanges">
+                    </a>
+                    @if($canPrintAdded)
+                        <a href="{{ route('cashier.print-kitchen-order', ['id' => $order->id, 'scope' => 'added']) }}"
+                           class="btn btn-outline-secondary btn-sm"
+                           target="_blank"
+                           rel="noopener">
+                            <i class="fas fa-layer-group me-1"></i>Imprimir recién agregados
+                        </a>
+                    @else
+                        <button type="button" class="btn btn-outline-secondary btn-sm" disabled>
+                            <i class="fas fa-layer-group me-1"></i>Imprimir recién agregados
+                        </button>
+                    @endif
+                    <button type="button" class="btn btn-success btn-sm" id="saveOrderChanges">
                         <i class="fas fa-save me-1"></i>Guardar cambios
                     </button>
                 </div>
@@ -366,6 +378,12 @@
                             <small class="text-muted">La suma de ambos montos debe ser igual al total del pedido.</small>
                         </div>
                     </div>
+                    <a href="{{ route('cashier.print-receipt', $order->id) }}"
+                       class="btn btn-outline-primary w-100 mb-2"
+                       target="_blank"
+                       rel="noopener">
+                        <i class="fas fa-print me-2"></i>Imprimir
+                    </a>
                     <button type="submit" class="btn btn-success w-100 mb-2">
                         <i class="fas fa-check-circle me-2"></i>Procesar y Cobrar
                     </button>
@@ -472,8 +490,6 @@
     </div>
 </div>
 
-<div class="toast-container position-fixed top-0 end-0 p-3" id="cashierToastContainer" style="z-index: 1100;"></div>
-<iframe id="cashierKitchenPrintFrame" title="Ticket de cocina caja" class="d-none"></iframe>
 @endsection
 
 @if($order->status === 'pending')
@@ -497,32 +513,15 @@
 const productsCatalog = @json($products);
 @include('orders._editor-utils')
 const orderEditorUtils = window.orderEditorUtils;
-const kitchenPrintFrame = document.getElementById('cashierKitchenPrintFrame');
 const cashierFoodNotesModal = new bootstrap.Modal(document.getElementById('cashierFoodNotesModal'));
 let currentItems = @json($cashierEditableItems);
 let cashierDraftItemCounter = 0;
-let cashierKitchenPrintUrl = '';
-let cashierKitchenPrintLoaded = false;
-let cashierKitchenPrintTimeoutId = null;
-let shouldAutoPrintKitchen = false;
 let pendingFoodProduct = null;
+let isSavingOrderChanges = false;
 
 function nextCashierItemKey() {
     cashierDraftItemCounter += 1;
     return `draft-${cashierDraftItemCounter}`;
-}
-
-function directCashierKitchenPrint(printUrl) {
-    cashierKitchenPrintUrl = printUrl;
-    cashierKitchenPrintLoaded = false;
-    shouldAutoPrintKitchen = true;
-    startCashierKitchenPrintTimeout();
-
-    if (kitchenPrintFrame) {
-        kitchenPrintFrame.src = printUrl;
-    }
-
-    showCashierToast('info', 'Preparando ticket de cocina...');
 }
 
 function findCashierItem(itemKey) {
@@ -539,51 +538,23 @@ function collectItems() {
     }));
 }
 
-function printCashierKitchenTicket(isAuto = false) {
-    if (!kitchenPrintFrame || !kitchenPrintFrame.contentWindow || !cashierKitchenPrintLoaded) {
-        if (!isAuto) {
-            showCashierToast('warning', 'La vista de impresión de cocina aún no está lista.');
-        }
+function setSaveOrderChangesState(isSaving) {
+    const saveButton = $('#saveOrderChanges');
+
+    if (!saveButton.length) {
         return;
     }
 
-    try {
-        kitchenPrintFrame.contentWindow.focus();
-        kitchenPrintFrame.contentWindow.print();
-        shouldAutoPrintKitchen = false;
-
-        if (isAuto) {
-            showCashierToast('info', 'Se abrió la impresión del ticket de cocina.');
-        }
-    } catch (error) {
-        if (isAuto) {
-            showCashierToast('warning', 'No se pudo abrir la impresión automática de cocina.');
-        } else {
-            showCashierToast('danger', 'No se pudo abrir la impresión de cocina.');
-        }
+    if (isSaving) {
+        saveButton
+            .prop('disabled', true)
+            .html('<i class="fas fa-spinner fa-spin me-1"></i>Guardando...');
+        return;
     }
-}
 
-function startCashierKitchenPrintTimeout() {
-    clearCashierKitchenPrintTimeout();
-    cashierKitchenPrintTimeoutId = setTimeout(function() {
-        if (!cashierKitchenPrintLoaded) {
-            handleCashierKitchenPrintLoadError();
-        }
-    }, 8000);
-}
-
-function clearCashierKitchenPrintTimeout() {
-    if (cashierKitchenPrintTimeoutId) {
-        clearTimeout(cashierKitchenPrintTimeoutId);
-        cashierKitchenPrintTimeoutId = null;
-    }
-}
-
-function handleCashierKitchenPrintLoadError() {
-    clearCashierKitchenPrintTimeout();
-    shouldAutoPrintKitchen = false;
-    showCashierToast('warning', 'No se pudo cargar la vista de impresión de cocina.');
+    saveButton
+        .prop('disabled', false)
+        .html('<i class="fas fa-save me-1"></i>Guardar cambios');
 }
 
 function recalcTotals() {
@@ -643,7 +614,7 @@ function renderCashierItems() {
                            value="${item.notes || ''}" data-item-key="${item.item_key}">
                 </td>
                 <td class="text-end align-middle">
-                    <button class="btn btn-sm btn-outline-danger remove-item"
+                    <button type="button" class="btn btn-sm btn-outline-danger remove-item"
                             data-item-key="${item.item_key}">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -774,23 +745,6 @@ $('#confirmCashierFoodNotes').on('click', function() {
     renderCashierItems();
 });
 
-if (kitchenPrintFrame) {
-    kitchenPrintFrame.addEventListener('load', function() {
-        cashierKitchenPrintLoaded = true;
-        clearCashierKitchenPrintTimeout();
-
-        if (shouldAutoPrintKitchen) {
-            setTimeout(function() {
-                printCashierKitchenTicket(true);
-            }, 200);
-        }
-    });
-
-    kitchenPrintFrame.addEventListener('error', function() {
-        handleCashierKitchenPrintLoadError();
-    });
-}
-
 $('#addProductBtn').on('click', function() {
     const productId = parseInt($('#addProductSelect').val(), 10);
     const qty = parseInt($('#addProductQty').val(), 10);
@@ -839,19 +793,20 @@ $('#addProductBtn').on('click', function() {
     renderCashierItems();
 });
 
-$('#printKitchenMainBtn').on('click', function() {
-    directCashierKitchenPrint('{{ route("cashier.print-kitchen-order", ["id" => $order->id, "scope" => "main"]) }}');
-});
-
-$('#printKitchenAddedBtn').on('click', function() {
-    $(this).prop('disabled', true);
-    directCashierKitchenPrint('{{ route("cashier.print-kitchen-order", ["id" => $order->id, "scope" => "added"]) }}');
-});
-
 $('#saveOrderChanges').on('click', function() {
+    if (isSavingOrderChanges) {
+        return;
+    }
+
+    isSavingOrderChanges = true;
+    setSaveOrderChangesState(true);
+
     $.ajax({
         url: '{{ route("cashier.update-order-items", $order->id) }}',
         method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+        },
         data: {
             _token: '{{ csrf_token() }}',
             table_id: $('#editTableSelect').val(),
@@ -862,7 +817,12 @@ $('#saveOrderChanges').on('click', function() {
             location.reload();
         },
         error: function(xhr) {
-            alert('Error al actualizar: ' + (xhr.responseJSON?.message || 'Error desconocido'));
+            const message = xhr.responseJSON?.message
+                || Object.values(xhr.responseJSON?.errors || {}).flat().join('\n')
+                || 'Error desconocido';
+            alert('Error al actualizar: ' + message);
+            isSavingOrderChanges = false;
+            setSaveOrderChangesState(false);
         }
     });
 });
@@ -878,41 +838,6 @@ function syncPaymentFields() {
     if (!isMixed) {
         $('#cashPaidAmountInput, #qrPaidAmountInput').val('');
     }
-}
-
-function showCashierToast(type, message) {
-    const container = document.getElementById('cashierToastContainer');
-    if (!container) {
-        return;
-    }
-
-    const toneMap = {
-        success: 'text-bg-success',
-        danger: 'text-bg-danger',
-        warning: 'text-bg-warning',
-        info: 'text-bg-info',
-    };
-
-    const toastEl = document.createElement('div');
-    toastEl.className = `toast align-items-center border-0 ${toneMap[type] || 'text-bg-secondary'}`;
-    toastEl.setAttribute('role', 'alert');
-    toastEl.setAttribute('aria-live', 'assertive');
-    toastEl.setAttribute('aria-atomic', 'true');
-    toastEl.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">${message}</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Cerrar"></button>
-        </div>
-    `;
-
-    container.appendChild(toastEl);
-
-    const toast = new bootstrap.Toast(toastEl, { delay: 3500 });
-    toast.show();
-
-    toastEl.addEventListener('hidden.bs.toast', function() {
-        toastEl.remove();
-    });
 }
 
 $('#paymentMethodSelect').on('change', function() {

@@ -13,14 +13,19 @@
             <h2><i class="fas fa-cash-register me-2"></i>Caja y Arqueo</h2>
             <p class="text-muted mb-0">Supervisa aperturas, cierres y diferencias de caja por cajero.</p>
         </div>
-        <a href="{{ route('admin.cash-sessions.print', request()->query()) }}" class="btn btn-outline-dark" target="_blank" rel="noopener">
-            <i class="fas fa-print me-2"></i>Imprimir
-        </a>
+        <div class="d-flex gap-2">
+            <a href="{{ route('admin.cash-sessions.thermal-print', request()->only(['user_id', 'date'])) }}" class="btn btn-warning">
+                <i class="fas fa-receipt me-2"></i>Impresión térmica
+            </a>
+            <a href="{{ route('admin.cash-sessions.print', request()->query()) }}" class="btn btn-outline-dark" target="_blank" rel="noopener">
+                <i class="fas fa-print me-2"></i>Imprimir
+            </a>
+        </div>
     </div>
 </div>
 
-<div class="row mb-4">
-    <div class="col-md-4">
+<div class="row mb-4 g-3">
+    <div class="col-md-4 col-xl">
         <div class="card">
             <div class="card-body">
                 <div class="text-muted small">Cajas abiertas</div>
@@ -28,7 +33,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-4 col-xl">
         <div class="card">
             <div class="card-body">
                 <div class="text-muted small">Cajas cerradas</div>
@@ -36,7 +41,23 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-4 col-xl">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted small">Ventas en efectivo</div>
+                <div class="fs-3 fw-bold">Bs. {{ number_format($summary['cash_sales_total'], 2) }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-xl">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-muted small">Ventas por QR</div>
+                <div class="fs-3 fw-bold">Bs. {{ number_format($summary['qr_sales_total'], 2) }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-xl">
         <div class="card">
             <div class="card-body">
                 <div class="text-muted small">Ventas registradas</div>
@@ -68,7 +89,11 @@
                     <option value="closed" {{ request('status') === 'closed' ? 'selected' : '' }}>Cerrada</option>
                 </select>
             </div>
-            <div class="col-md-4 d-flex align-items-end gap-2">
+            <div class="col-md-4">
+                <label class="form-label">Fecha</label>
+                <input type="date" name="date" value="{{ request('date') }}" class="form-control">
+            </div>
+            <div class="col-md-12 d-flex align-items-end gap-2">
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-search me-2"></i>Filtrar
                 </button>
@@ -87,10 +112,11 @@
                         <th>Cajero</th>
                         <th>Estado</th>
                         <th>Apertura</th>
-                        <th>Ventas</th>
-                        <th>Esperado</th>
+                        <th>Efectivo</th>
+                        <th>QR</th>
+                        <th>Total</th>
+                        <th>Esperado caja</th>
                         <th>Contado</th>
-                        <th>Diferencia</th>
                         <th>Fechas</th>
                         <th>Observaciones</th>
                     </tr>
@@ -105,11 +131,12 @@
                             </span>
                         </td>
                         <td>Bs. {{ number_format($session->opening_amount, 2) }}</td>
+                        <td>Bs. {{ number_format($session->cash_sales_total, 2) }}</td>
+                        <td>Bs. {{ number_format($session->qr_sales_total, 2) }}</td>
                         <td>Bs. {{ number_format($session->sales_total, 2) }}</td>
                         <td>Bs. {{ number_format($session->expected_balance, 2) }}</td>
-                        <td>{{ $session->counted_amount !== null ? 'Bs. ' . number_format($session->counted_amount, 2) : '-' }}</td>
-                        <td class="{{ ($session->difference_amount ?? 0) < 0 ? 'text-danger' : 'text-success' }}">
-                            {{ $session->difference_amount !== null ? 'Bs. ' . number_format($session->difference_amount, 2) : '-' }}
+                        <td class="fw-semibold {{ $session->counted_amount !== null ? 'text-primary' : 'text-muted' }}">
+                            {{ $session->counted_amount !== null ? 'Bs. ' . number_format($session->counted_amount, 2) : '-' }}
                         </td>
                         <td>
                             <div><small>Apertura: {{ $session->opened_at?->format('d/m/Y H:i') }}</small></div>
@@ -130,7 +157,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-4">No hay sesiones de caja para mostrar.</td>
+                        <td colspan="10" class="text-center text-muted py-4">No hay sesiones de caja para mostrar.</td>
                     </tr>
                     @endforelse
                 </tbody>

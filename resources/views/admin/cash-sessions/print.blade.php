@@ -31,6 +31,14 @@
             <strong>{{ $summary['closed_count'] }}</strong>
         </div>
         <div class="summary-box">
+            <div>Ventas en efectivo</div>
+            <strong>Bs. {{ number_format($summary['cash_sales_total'], 2) }}</strong>
+        </div>
+        <div class="summary-box">
+            <div>Ventas por QR</div>
+            <strong>Bs. {{ number_format($summary['qr_sales_total'], 2) }}</strong>
+        </div>
+        <div class="summary-box">
             <div>Ventas registradas</div>
             <strong>Bs. {{ number_format($summary['sales_total'], 2) }}</strong>
         </div>
@@ -42,10 +50,11 @@
                 <th>Cajero</th>
                 <th>Estado</th>
                 <th>Apertura</th>
-                <th>Ventas</th>
-                <th>Esperado</th>
+                <th>Efectivo</th>
+                <th>QR</th>
+                <th>Total</th>
+                <th>Esperado caja</th>
                 <th>Contado</th>
-                <th>Diferencia</th>
                 <th>Fechas</th>
                 <th>Observaciones</th>
             </tr>
@@ -56,10 +65,11 @@
                 <td>{{ $session->cashier?->name ?? '-' }}</td>
                 <td>{{ $session->status === 'open' ? 'Abierta' : 'Cerrada' }}</td>
                 <td>Bs. {{ number_format($session->opening_amount, 2) }}</td>
+                <td>Bs. {{ number_format($session->cash_sales_total, 2) }}</td>
+                <td>Bs. {{ number_format($session->qr_sales_total, 2) }}</td>
                 <td>Bs. {{ number_format($session->sales_total, 2) }}</td>
                 <td>Bs. {{ number_format($session->expected_balance, 2) }}</td>
                 <td>{{ $session->counted_amount !== null ? 'Bs. ' . number_format($session->counted_amount, 2) : '-' }}</td>
-                <td>{{ $session->difference_amount !== null ? 'Bs. ' . number_format($session->difference_amount, 2) : '-' }}</td>
                 <td>
                     Apertura: {{ $session->opened_at?->format('d/m/Y H:i') }}<br>
                     Cierre: {{ $session->closed_at?->format('d/m/Y H:i') ?? '-' }}
@@ -79,7 +89,7 @@
             </tr>
             @empty
             <tr>
-                <td colspan="9">No hay sesiones para mostrar.</td>
+                <td colspan="10">No hay sesiones para mostrar.</td>
             </tr>
             @endforelse
         </tbody>
